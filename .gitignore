@@ -1,0 +1,55 @@
+## .NET / Visual Studio gitignore
+
+# Build results
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+msbuild.log
+msbuild.err
+msbuild.wrn
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+
+# Visual Studio
+.vs/
+.vscode/
+*.user
+*.suo
+.vs/
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+# Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.coverage
+*.coveragexml
+
+# Others
+*.log
+*.tmp
+*.bak
+*.tmp
+*.swp
+*.orig
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ASP.NET / .NET
+appsettings.*.local.json
+*.db
+*.db-shm
+*.db-wal
