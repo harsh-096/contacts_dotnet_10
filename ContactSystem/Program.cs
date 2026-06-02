@@ -54,12 +54,14 @@ builder.Services.AddControllers()
 
 // ---- Dependency Injection ----
 builder.Services.AddSingleton<IDatabaseHelper, DatabaseHelper>();
-builder.Services.AddScoped<ISubscriberRepository, SubscriberRepository>();
-builder.Services.AddScoped<ISubscriberService, SubscriberService>();
+builder.Services.AddScoped<IContactRepository, ContactRepository>();
+builder.Services.AddScoped<IContactService, ContactService>();
 builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IGroupRepository, GroupRepository>();
 builder.Services.AddScoped<IGroupService, GroupService>();
+builder.Services.AddScoped<IGroupContactsRepository, GroupContactsRepository>();
+builder.Services.AddScoped<IGroupContactsService, GroupContactsService>();
 
 // ---- Swagger / OpenAPI ----
 builder.Services.AddEndpointsApiExplorer();
@@ -69,8 +71,8 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo
     {
         Version     = "v1",
-        Title       = "Subscriber Management API",
-        Description = "A production-ready ASP.NET Core 10 Web API for managing subscriber records, " +
+        Title       = "Contact Management API",
+        Description = "A production-ready ASP.NET Core 10 Web API for managing contact records, " +
                       "backed by ADO.NET and SQL Server stored procedures."
     });
 
@@ -86,7 +88,7 @@ builder.Services.AddSwaggerGen(c =>
     // Swashbuckle's `DocumentFilter<T>(params object[])` extension does not
     // unpack the string[] into individual positional ctor arguments; the
     // single object[] element (the string[]) then matches the (string[]) ctor.
-    c.DocumentFilter<TagOrderingDocumentFilter>(new object[] { new[] { "Projects", "Groups", "Subscribers" } });
+    c.DocumentFilter<TagOrderingDocumentFilter>(new object[] { new[] { "Projects", "Groups", "Contacts" } });
 });
 
 var app = builder.Build();
@@ -97,9 +99,9 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Subscriber Management API V1");
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Contact Management API V1");
     c.RoutePrefix = string.Empty; // Swagger UI at root
-    c.DocumentTitle = "Subscriber Management API";
+    c.DocumentTitle = "Contact Management API";
     c.DisplayRequestDuration();
 });
 

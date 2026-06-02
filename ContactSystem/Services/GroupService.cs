@@ -9,12 +9,18 @@ namespace ContactSystem.Services
     {
         private readonly IGroupRepository _repo;
         private readonly IProjectRepository _projectRepo;
+        private readonly IGroupContactsRepository _groupContactsRepo;
         private readonly ILogger<GroupService> _logger;
 
-        public GroupService(IGroupRepository repo, IProjectRepository projectRepo, ILogger<GroupService> logger)
+        public GroupService(
+            IGroupRepository repo,
+            IProjectRepository projectRepo,
+            IGroupContactsRepository groupContactsRepo,
+            ILogger<GroupService> logger)
         {
             _repo = repo;
             _projectRepo = projectRepo;
+            _groupContactsRepo = groupContactsRepo;
             _logger = logger;
         }
 
@@ -38,9 +44,26 @@ namespace ContactSystem.Services
 
         public async Task<ApiResponse<GroupResponseDto>> CreateAsync(GroupCreateDto dto)
         {
-            // ProjectId is optional. Only verify the project exists when one was supplied.
-            if (dto.ProjectId.HasValue && !await _projectRepo.ExistsAsync(dto.ProjectId.Value))
-                return ApiResponse<GroupResponseDto>.Fail($"Project with id {dto.ProjectId} not found.", statusCode: StatusCodes.Status404NotFound);
+            // ProjectId is required: a project can have only one group.
+            if (dto.ProjectId <= 0)
+                return ApiResponse<GroupResponseDto>.Fail("ProjectId is required.", statusCode: StatusCodes.Status400BadRequest);
+
+            if (!await _projectRepo.ExistsAsync(dto.ProjectId))
+                return ApiResponse<GroupResponseDto>.Fail(
+                    $"Project with id {dto.ProjectId} not found.",
+                    statusCode: StatusCodes.Status404NotFound);
+
+            // Enforce "one project -> one group" at the service layer too (the DB
+            // also enforces it via UQ_Groups_ProjectId).
+            var existingForProject = await _repo.GetByProjectIdAsync(dto.ProjectId);
+            if (existingForProject.Any())
+            {
+                var existing = existingForProject.First();
+                return ApiResponse<GroupResponseDto>.Fail(
+                    $"A group already exists for project {dto.ProjectId} (groupId={existing.GroupId}, groupName='{existing.GroupName}'). " +
+                    "One project can have only one group.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
 
             var entity = new Group
             {
@@ -82,6 +105,19 @@ namespace ContactSystem.Services
                     statusCode: StatusCodes.Status404NotFound);
             }
 
+            // Enforce "one project -> one group" when changing the project.
+            if (newProjectId is not null && newProjectId != existing.ProjectId)
+            {
+                var conflicting = await _repo.GetByProjectIdAsync(newProjectId.Value);
+                if (conflicting.Any())
+                {
+                    return ApiResponse<GroupResponseDto>.Fail(
+                        $"A different group (groupId={conflicting.First().GroupId}) already exists for project {newProjectId}. " +
+                        "One project can have only one group.",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+            }
+
             var rows = await _repo.UpdateAsync(
                 id: id,
                 groupName: newGroupName,
@@ -110,11 +146,31 @@ namespace ContactSystem.Services
             if (existing is null)
                 return ApiResponse<bool>.Fail($"Group with id {id} not found.", statusCode: StatusCodes.Status404NotFound);
 
-            var rows = await _repo.DeleteAsync(id);
-            if (rows == 0)
-                return ApiResponse<bool>.Fail("Delete failed; no rows affected.", statusCode: StatusCodes.Status500InternalServerError);
+            // Reject deletion if the group still has members so we surface a friendly
+            // 409 instead of letting the FK violation bubble up as a 500.
+            var memberCount = (await _groupContactsRepo.GetContactsByGroupIdAsync(id)).Count();
+            if (memberCount > 0)
+            {
+                return ApiResponse<bool>.Fail(
+                    $"Group with id {id} still has {memberCount} contact member(s). " +
+                    "Remove all contacts from the group before deleting it.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
 
-            return ApiResponse<bool>.Ok(true, "Group deleted successfully.");
+            try
+            {
+                var rows = await _repo.DeleteAsync(id);
+                if (rows == 0)
+                    return ApiResponse<bool>.Fail("Delete failed; no rows affected.", statusCode: StatusCodes.Status500InternalServerError);
+
+                return ApiResponse<bool>.Ok(true, "Group deleted successfully.");
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 547)
+            {
+                return ApiResponse<bool>.Fail(
+                    "Group cannot be deleted because it still has dependent contact members.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
         }
 
         public async Task<ApiResponse<IEnumerable<GroupResponseDto>>> GetByProjectIdAsync(int projectId)
@@ -123,7 +179,9 @@ namespace ContactSystem.Services
                 return ApiResponse<IEnumerable<GroupResponseDto>>.Fail("Invalid projectId.", statusCode: StatusCodes.Status400BadRequest);
 
             if (!await _projectRepo.ExistsAsync(projectId))
-                return ApiResponse<IEnumerable<GroupResponseDto>>.Fail($"Project with id {projectId} not found.", statusCode: StatusCodes.Status404NotFound);
+                return ApiResponse<IEnumerable<GroupResponseDto>>.Fail(
+                    $"Project with id {projectId} not found.",
+                    statusCode: StatusCodes.Status404NotFound);
 
             var groups = await _repo.GetByProjectIdAsync(projectId);
             return ApiResponse<IEnumerable<GroupResponseDto>>.Ok(groups.Select(ToDto));

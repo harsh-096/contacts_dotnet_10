@@ -59,7 +59,7 @@ namespace ContactSystem.Repositories
             await using var cmd = new SqlCommand(sp, conn) { CommandType = CommandType.StoredProcedure };
 
             cmd.Parameters.Add(new SqlParameter("@GroupName",  SqlDbType.VarChar, 255) { Value = group.GroupName });
-            cmd.Parameters.Add(new SqlParameter("@ProjectId", SqlDbType.Int)         { Value = (object?)group.ProjectId ?? DBNull.Value });
+            cmd.Parameters.Add(new SqlParameter("@ProjectId", SqlDbType.Int)         { Value = group.ProjectId });
 
             var result = await cmd.ExecuteScalarAsync();
             var newId = result != null ? Convert.ToInt32(result) : 0;
@@ -126,7 +126,7 @@ namespace ContactSystem.Repositories
         {
             GroupId    = r.GetInt32(r.GetOrdinal("GroupId")),
             GroupName  = r.GetString(r.GetOrdinal("GroupName")),
-            ProjectId  = r.IsDBNull(r.GetOrdinal("ProjectId")) ? null : r.GetInt32(r.GetOrdinal("ProjectId"))
+            ProjectId  = r.GetInt32(r.GetOrdinal("ProjectId"))
         };
     }
 }

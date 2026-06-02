@@ -8,11 +8,19 @@ namespace ContactSystem.Services
     public class ProjectService : IProjectService
     {
         private readonly IProjectRepository _repo;
+        private readonly IContactRepository _contactRepo;
+        private readonly IGroupRepository _groupRepo;
         private readonly ILogger<ProjectService> _logger;
 
-        public ProjectService(IProjectRepository repo, ILogger<ProjectService> logger)
+        public ProjectService(
+            IProjectRepository repo,
+            IContactRepository contactRepo,
+            IGroupRepository groupRepo,
+            ILogger<ProjectService> logger)
         {
             _repo = repo;
+            _contactRepo = contactRepo;
+            _groupRepo = groupRepo;
             _logger = logger;
         }
 
@@ -90,11 +98,40 @@ namespace ContactSystem.Services
             if (existing is null)
                 return ApiResponse<bool>.Fail($"Project with id {id} not found.", statusCode: StatusCodes.Status404NotFound);
 
-            var rows = await _repo.DeleteAsync(id);
-            if (rows == 0)
-                return ApiResponse<bool>.Fail("Delete failed; no rows affected.", statusCode: StatusCodes.Status500InternalServerError);
+            // Reject deletion if the project still has contacts or a group attached so we
+            // surface a friendly 409 instead of letting the FK violation bubble up as 500.
+            var contactCount = (await _contactRepo.GetByProjectIdAsync(id)).Count();
+            if (contactCount > 0)
+            {
+                return ApiResponse<bool>.Fail(
+                    $"Project with id {id} still has {contactCount} contact(s). " +
+                    "Delete or move all contacts before deleting the project.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
 
-            return ApiResponse<bool>.Ok(true, "Project deleted successfully.");
+            var groupCount = (await _groupRepo.GetByProjectIdAsync(id)).Count();
+            if (groupCount > 0)
+            {
+                return ApiResponse<bool>.Fail(
+                    $"Project with id {id} still has {groupCount} group(s). " +
+                    "Delete the group before deleting the project.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            try
+            {
+                var rows = await _repo.DeleteAsync(id);
+                if (rows == 0)
+                    return ApiResponse<bool>.Fail("Delete failed; no rows affected.", statusCode: StatusCodes.Status500InternalServerError);
+
+                return ApiResponse<bool>.Ok(true, "Project deleted successfully.");
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 547)
+            {
+                return ApiResponse<bool>.Fail(
+                    "Project cannot be deleted because it still has dependent records (contacts or groups).",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
         }
 
         private static ProjectResponseDto ToDto(Project p) => new()

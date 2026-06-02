@@ -1,4 +1,5 @@
 using ContactSystem.DTOs;
+using ContactSystem.DTOs.Examples;
 using ContactSystem.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
@@ -27,7 +28,7 @@ namespace ContactSystem.Controllers
         [HttpGet]
         [SwaggerOperation(
             Summary = "Retrieve all projects",
-            Description = "Returns a list of every project currently stored in the database.",
+            Description = "Returns a list of every project currently stored in the database, ordered by ProjectId descending.",
             OperationId = "GetAllProjects")]
         [SwaggerResponse(StatusCodes.Status200OK, "Projects retrieved successfully.",
             typeof(ApiResponse<IEnumerable<ProjectResponseDto>>))]
@@ -50,7 +51,7 @@ namespace ContactSystem.Controllers
             typeof(ApiResponse<ProjectResponseDto>))]
         [SwaggerResponse(StatusCodes.Status404NotFound, "Not Found.")]
         public async Task<ActionResult<ApiResponse<ProjectResponseDto>>> GetById(
-            [SwaggerParameter("The project id.", Required = true)] int id)
+            [SwaggerParameter("The project id (e.g. 1).", Required = true)] int id)
         {
             var result = await _service.GetByIdAsync(id);
             return result.Success
@@ -68,6 +69,8 @@ namespace ContactSystem.Controllers
             Description = "Adds a new project record. ProjectName is required and must be 1-255 characters.",
             OperationId = "CreateProject")]
         [SwaggerRequestExample(typeof(ProjectCreateDto), typeof(CreateProjectExample))]
+        [SwaggerRequestExample(typeof(ProjectCreateDto), typeof(CreateProjectExample_Alternative))]
+        [SwaggerRequestExample(typeof(ProjectCreateDto), typeof(CreateProjectExample_Tech))]
         [SwaggerResponse(StatusCodes.Status201Created, "Project created successfully.",
             typeof(ApiResponse<ProjectResponseDto>))]
         [SwaggerResponse(StatusCodes.Status400BadRequest, "Bad Request.")]
@@ -100,6 +103,7 @@ namespace ContactSystem.Controllers
                           "The URL id is authoritative; any id in the request body is ignored.",
             OperationId = "UpdateProject")]
         [SwaggerRequestExample(typeof(ProjectUpdateDto), typeof(UpdateProjectExample))]
+        [SwaggerRequestExample(typeof(ProjectUpdateDto), typeof(UpdateProjectExample_NoChange))]
         [SwaggerResponse(StatusCodes.Status200OK, "Project updated successfully.",
             typeof(ApiResponse<ProjectResponseDto>))]
         [SwaggerResponse(StatusCodes.Status400BadRequest, "Bad Request.")]
@@ -118,14 +122,18 @@ namespace ContactSystem.Controllers
         /// <param name="id">Project id to delete.</param>
         /// <response code="200">Project deleted.</response>
         /// <response code="404">Not Found.</response>
+        /// <response code="409">Project still has dependent subscribers or groups.</response>
         [HttpDelete("{id:int}")]
         [SwaggerOperation(
             Summary = "Delete a project",
-            Description = "Permanently removes the project record identified by id.",
+            Description = "Permanently removes the project record identified by id. " +
+                          "Returns 409 if the project still has subscribers or groups attached; " +
+                          "remove them first.",
             OperationId = "DeleteProject")]
         [SwaggerResponse(StatusCodes.Status200OK, "Project deleted successfully.",
             typeof(ApiResponse<bool>))]
         [SwaggerResponse(StatusCodes.Status404NotFound, "Not Found.")]
+        [SwaggerResponse(StatusCodes.Status409Conflict, "Project still has dependent subscribers or groups.")]
         public async Task<ActionResult<ApiResponse<bool>>> Delete(
             [SwaggerParameter("The project id.", Required = true)] int id)
         {
@@ -134,23 +142,5 @@ namespace ContactSystem.Controllers
                 ? Ok(result)
                 : StatusCode(result.StatusCode, result);
         }
-    }
-
-    public class CreateProjectExample : IExamplesProvider<ProjectCreateDto>
-    {
-        public ProjectCreateDto GetExamples() => new()
-        {
-            ProjectName = "Apollo"
-        };
-    }
-
-    public class UpdateProjectExample : IExamplesProvider<ProjectUpdateDto>
-    {
-        public ProjectUpdateDto GetExamples() => new()
-        {
-            // Partial update example: only projectName is being changed.
-            // All other fields are omitted and will be left untouched in the database.
-            ProjectName = "Apollo-Renamed"
-        };
     }
 }
