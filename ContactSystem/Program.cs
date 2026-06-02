@@ -30,6 +30,13 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
         options.JsonSerializerOptions.DictionaryKeyPolicy     = JsonNamingPolicy.SnakeCaseLower;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        // Always emit DateTime / DateTime? as UTC ISO 8601 with an explicit
+        // offset so clients can render the value in any timezone. Without
+        // this, SqlDataReader returns Unspecified DateTime values and the
+        // default System.Text.Json writer omits the offset, which makes
+        // browsers parse the value as local time and silently shift it.
+        options.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
+        options.JsonSerializerOptions.Converters.Add(new NullableUtcDateTimeConverter());
     })
     .ConfigureApiBehaviorOptions(options =>
     {
