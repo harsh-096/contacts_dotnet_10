@@ -1,6 +1,11 @@
 -- ===========================================================
 -- 03_StoredProcedures.sql
 -- Run after 02_CreateTable.sql
+--
+-- Subscribers procedures use the normalized phone layout:
+--   CountryCode    NVARCHAR(5)   -- includes '+', e.g. '+91'
+--   NationalNumber NVARCHAR(20)  -- digits only,  e.g. '9087648930'
+--   PhoneNumber    NVARCHAR(25)  -- digits only,  e.g. '919087648930'
 -- ===========================================================
 
 USE ContactsDB;
@@ -21,6 +26,8 @@ BEGIN
     SELECT Id,
            FirstName,
            LastName,
+           CountryCode,
+           NationalNumber,
            PhoneNumber,
            IsSubscribed,
            CreatedDate,
@@ -46,6 +53,8 @@ BEGIN
     SELECT Id,
            FirstName,
            LastName,
+           CountryCode,
+           NationalNumber,
            PhoneNumber,
            IsSubscribed,
            CreatedDate,
@@ -64,10 +73,12 @@ IF OBJECT_ID('dbo.sp_CreateSubscriber', 'P') IS NOT NULL
 GO
 
 CREATE PROCEDURE dbo.sp_CreateSubscriber
-    @FirstName    NVARCHAR(50),
-    @LastName     NVARCHAR(50),
-    @PhoneNumber  NVARCHAR(20),
-    @IsSubscribed BIT
+    @FirstName       NVARCHAR(50),
+    @LastName        NVARCHAR(50),
+    @CountryCode     NVARCHAR(5),
+    @NationalNumber  NVARCHAR(20),
+    @PhoneNumber     NVARCHAR(25),
+    @IsSubscribed    BIT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -76,8 +87,10 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
 
-        INSERT INTO dbo.Subscribers (FirstName, LastName, PhoneNumber, IsSubscribed, CreatedDate)
-        VALUES (@FirstName, @LastName, @PhoneNumber, @IsSubscribed, SYSUTCDATETIME());
+        INSERT INTO dbo.Subscribers
+            (FirstName, LastName, CountryCode, NationalNumber, PhoneNumber, IsSubscribed, CreatedDate)
+        VALUES
+            (@FirstName, @LastName, @CountryCode, @NationalNumber, @PhoneNumber, @IsSubscribed, SYSUTCDATETIME());
 
         SELECT CAST(SCOPE_IDENTITY() AS INT) AS NewId;
 
@@ -99,6 +112,11 @@ GO
 -- PATCH-style semantics: any parameter passed as NULL is treated as
 -- "leave this column unchanged". Pass a value to overwrite.
 --
+-- Note: CountryCode / NationalNumber / PhoneNumber are independent
+-- columns at the DB level. The service layer is responsible for
+-- recomputing PhoneNumber whenever CountryCode or NationalNumber
+-- changes and for passing a consistent triple to this procedure.
+--
 -- Defenses:
 --   * @Id is rejected if NULL or <= 0.
 --   * TOP (1) guarantees a single-row update even if the PK is ever
@@ -109,11 +127,13 @@ IF OBJECT_ID('dbo.sp_UpdateSubscriber', 'P') IS NOT NULL
 GO
 
 CREATE PROCEDURE dbo.sp_UpdateSubscriber
-    @Id           INT,
-    @FirstName    NVARCHAR(50) = NULL,
-    @LastName     NVARCHAR(50) = NULL,
-    @PhoneNumber  NVARCHAR(20) = NULL,
-    @IsSubscribed BIT          = NULL
+    @Id              INT,
+    @FirstName       NVARCHAR(50) = NULL,
+    @LastName        NVARCHAR(50) = NULL,
+    @CountryCode     NVARCHAR(5)  = NULL,
+    @NationalNumber  NVARCHAR(20) = NULL,
+    @PhoneNumber     NVARCHAR(25) = NULL,
+    @IsSubscribed    BIT          = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -129,19 +149,23 @@ BEGIN
         BEGIN TRANSACTION;
 
         UPDATE TOP (1) dbo.Subscribers
-        SET    FirstName    = ISNULL(@FirstName,    FirstName),
-               LastName     = ISNULL(@LastName,     LastName),
-               PhoneNumber  = ISNULL(@PhoneNumber,  PhoneNumber),
-               IsSubscribed = ISNULL(@IsSubscribed, IsSubscribed),
+        SET    FirstName       = ISNULL(@FirstName,      FirstName),
+               LastName        = ISNULL(@LastName,       LastName),
+               CountryCode     = ISNULL(@CountryCode,    CountryCode),
+               NationalNumber  = ISNULL(@NationalNumber, NationalNumber),
+               PhoneNumber     = ISNULL(@PhoneNumber,    PhoneNumber),
+               IsSubscribed    = ISNULL(@IsSubscribed,   IsSubscribed),
                -- Bump UpdatedDate only when at least one field was actually provided.
-               UpdatedDate  = CASE
-                                WHEN @FirstName    IS NOT NULL
-                                  OR @LastName     IS NOT NULL
-                                  OR @PhoneNumber  IS NOT NULL
-                                  OR @IsSubscribed IS NOT NULL
-                                THEN SYSUTCDATETIME()
-                                ELSE UpdatedDate
-                              END
+               UpdatedDate     = CASE
+                                   WHEN @FirstName       IS NOT NULL
+                                     OR @LastName        IS NOT NULL
+                                     OR @CountryCode     IS NOT NULL
+                                     OR @NationalNumber  IS NOT NULL
+                                     OR @PhoneNumber     IS NOT NULL
+                                     OR @IsSubscribed    IS NOT NULL
+                                   THEN SYSUTCDATETIME()
+                                   ELSE UpdatedDate
+                                 END
         WHERE  Id = @Id;
 
         SELECT @@ROWCOUNT AS RowsAffected;

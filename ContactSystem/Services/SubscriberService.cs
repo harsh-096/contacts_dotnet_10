@@ -36,15 +36,21 @@ namespace ContactSystem.Services
 
         public async Task<ApiResponse<SubscriberResponseDto>> CreateAsync(CreateSubscriberDto dto)
         {
-            if (await _repo.PhoneNumberExistsAsync(dto.PhoneNumber))
+            var countryCode    = dto.CountryCode.Trim();
+            var nationalNumber = dto.NationalNumber.Trim();
+            var phoneNumber    = BuildPhoneNumber(countryCode, nationalNumber);
+
+            if (await _repo.PhoneNumberExistsAsync(phoneNumber))
                 return ApiResponse<SubscriberResponseDto>.Fail("PhoneNumber already exists.", statusCode: StatusCodes.Status409Conflict);
 
             var entity = new Subscriber
             {
-                FirstName    = dto.FirstName.Trim(),
-                LastName     = dto.LastName.Trim(),
-                PhoneNumber  = dto.PhoneNumber.Trim(),
-                IsSubscribed = dto.IsSubscribed
+                FirstName      = dto.FirstName.Trim(),
+                LastName       = dto.LastName.Trim(),
+                CountryCode    = countryCode,
+                NationalNumber = nationalNumber,
+                PhoneNumber    = phoneNumber,
+                IsSubscribed   = dto.IsSubscribed
             };
 
             var newId = await _repo.CreateAsync(entity);
@@ -67,25 +73,38 @@ namespace ContactSystem.Services
                 return ApiResponse<SubscriberResponseDto>.Fail($"Subscriber with id {id} not found.", statusCode: StatusCodes.Status404NotFound);
 
             // Trim only the values that were actually provided.
-            var newFirstName    = dto.FirstName?.Trim();
-            var newLastName     = dto.LastName?.Trim();
-            var newPhoneNumber  = dto.PhoneNumber?.Trim();
-            var newIsSubscribed = dto.IsSubscribed;
+            var newFirstName      = dto.FirstName?.Trim();
+            var newLastName       = dto.LastName?.Trim();
+            var newCountryCode    = dto.CountryCode?.Trim();
+            var newNationalNumber = dto.NationalNumber?.Trim();
+            var newIsSubscribed   = dto.IsSubscribed;
 
-            // Phone-uniqueness check only runs when the phone is being changed.
-            if (newPhoneNumber is not null
-                && !string.Equals(newPhoneNumber, existing.PhoneNumber, StringComparison.Ordinal)
-                && await _repo.PhoneNumberExistsAsync(newPhoneNumber, excludeId: id))
+            // If either phone component is provided, recompute PhoneNumber automatically
+            // from the new value(s) merged with the existing ones; the client never has
+            // to send PhoneNumber explicitly.
+            string? newPhoneNumber = null;
+            if (newCountryCode is not null || newNationalNumber is not null)
             {
-                return ApiResponse<SubscriberResponseDto>.Fail(
-                    "PhoneNumber already exists for another subscriber.",
-                    statusCode: StatusCodes.Status409Conflict);
+                var effectiveCountryCode    = newCountryCode    ?? existing.CountryCode;
+                var effectiveNationalNumber = newNationalNumber ?? existing.NationalNumber;
+                newPhoneNumber = BuildPhoneNumber(effectiveCountryCode, effectiveNationalNumber);
+
+                // Uniqueness check only runs when the resulting phone is actually changing.
+                if (!string.Equals(newPhoneNumber, existing.PhoneNumber, StringComparison.Ordinal)
+                    && await _repo.PhoneNumberExistsAsync(newPhoneNumber, excludeId: id))
+                {
+                    return ApiResponse<SubscriberResponseDto>.Fail(
+                        "PhoneNumber already exists for another subscriber.",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
             }
 
             var rows = await _repo.UpdateAsync(
                 id: id,
                 firstName: newFirstName,
                 lastName: newLastName,
+                countryCode: newCountryCode,
+                nationalNumber: newNationalNumber,
                 phoneNumber: newPhoneNumber,
                 isSubscribed: newIsSubscribed);
 
@@ -119,15 +138,25 @@ namespace ContactSystem.Services
             return ApiResponse<bool>.Ok(true, "Subscriber deleted successfully.");
         }
 
+        /// <summary>
+        /// Builds the canonical PhoneNumber storage value:
+        ///   PhoneNumber = CountryCode without '+' + NationalNumber  (digits only).
+        /// Example: ("+91", "9087648930") -> "919087648930".
+        /// </summary>
+        private static string BuildPhoneNumber(string countryCode, string nationalNumber)
+            => countryCode.Replace("+", string.Empty) + nationalNumber;
+
         private static SubscriberResponseDto ToDto(Subscriber s) => new()
         {
-            Id           = s.Id,
-            FirstName    = s.FirstName,
-            LastName     = s.LastName,
-            PhoneNumber  = s.PhoneNumber,
-            IsSubscribed = s.IsSubscribed,
-            CreatedDate  = s.CreatedDate,
-            UpdatedDate  = s.UpdatedDate
+            Id             = s.Id,
+            FirstName      = s.FirstName,
+            LastName       = s.LastName,
+            CountryCode    = s.CountryCode,
+            NationalNumber = s.NationalNumber,
+            PhoneNumber    = s.PhoneNumber,
+            IsSubscribed   = s.IsSubscribed,
+            CreatedDate    = s.CreatedDate,
+            UpdatedDate    = s.UpdatedDate
         };
     }
 }

@@ -12,6 +12,8 @@ namespace ContactSystem.Interfaces
             int id,
             string? firstName,
             string? lastName,
+            string? countryCode,
+            string? nationalNumber,
             string? phoneNumber,
             bool? isSubscribed);
         Task<int> DeleteAsync(int id);

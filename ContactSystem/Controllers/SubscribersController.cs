@@ -66,7 +66,8 @@ namespace ContactSystem.Controllers
         [HttpPost]
         [SwaggerOperation(
             Summary = "Create a new subscriber",
-            Description = "Adds a new subscriber record. PhoneNumber must be in E.164 international format (e.g. +919876543210, +12025551234) and unique.",
+            Description = "Adds a new subscriber record. Supply CountryCode (e.g. +91) and NationalNumber (digits only, e.g. 9087648930); " +
+                          "the server automatically builds PhoneNumber = CountryCode without '+' + NationalNumber (e.g. 919087648930) and enforces uniqueness on PhoneNumber.",
             OperationId = "CreateSubscriber")]
         [SwaggerRequestExample(typeof(CreateSubscriberDto), typeof(CreateSubscriberExample))]
         [SwaggerResponse(StatusCodes.Status201Created, "Subscriber created successfully.",
@@ -86,8 +87,10 @@ namespace ContactSystem.Controllers
         /// <remarks>
         /// Send only the fields you want to change — omitted fields are left untouched.
         /// The <c>id</c> in the URL is authoritative; do not send id in the body.
-        /// At least one of <c>firstName</c>, <c>lastName</c>, <c>phoneNumber</c>, <c>isSubscribed</c> must be provided
-        /// (an empty body returns 400). Only the row with the matching id is updated.
+        /// At least one of <c>firstName</c>, <c>lastName</c>, <c>countryCode</c>, <c>nationalNumber</c>, <c>isSubscribed</c> must be provided
+        /// (an empty body returns 400). If either <c>countryCode</c> or <c>nationalNumber</c> is supplied, the server
+        /// automatically rebuilds <c>phoneNumber</c> from the merged values; clients never send phoneNumber.
+        /// Only the row with the matching id is updated.
         /// </remarks>
         /// <param name="id">Subscriber id to update (taken from URL, not body).</param>
         /// <param name="dto">Partial subscriber payload — only included fields are updated.</param>
@@ -144,10 +147,11 @@ namespace ContactSystem.Controllers
     {
         public CreateSubscriberDto GetExamples() => new()
         {
-            FirstName    = "Mohan",
-            LastName     = "Pyare",
-            PhoneNumber  = "+919876543210",
-            IsSubscribed = true
+            FirstName      = "John",
+            LastName       = "Doe",
+            CountryCode    = "+91",
+            NationalNumber = "9087648930",
+            IsSubscribed   = true
         };
     }
 
@@ -157,7 +161,7 @@ namespace ContactSystem.Controllers
         {
             // Partial update example: only firstName is being changed.
             // All other fields are omitted and will be left untouched in the database.
-            FirstName    = "Mohan"
+            FirstName = "John"
         };
     }
 }

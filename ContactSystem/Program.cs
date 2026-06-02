@@ -6,6 +6,7 @@ using ContactSystem.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.Filters;
+using Swashbuckle.AspNetCore.SwaggerGen;
 using System.Reflection;
 using System.Text.Json;
 
@@ -55,6 +56,10 @@ builder.Services.AddControllers()
 builder.Services.AddSingleton<IDatabaseHelper, DatabaseHelper>();
 builder.Services.AddScoped<ISubscriberRepository, SubscriberRepository>();
 builder.Services.AddScoped<ISubscriberService, SubscriberService>();
+builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
+builder.Services.AddScoped<IProjectService, ProjectService>();
+builder.Services.AddScoped<IGroupRepository, GroupRepository>();
+builder.Services.AddScoped<IGroupService, GroupService>();
 
 // ---- Swagger / OpenAPI ----
 builder.Services.AddEndpointsApiExplorer();
@@ -74,6 +79,14 @@ builder.Services.AddSwaggerGen(c =>
     c.IncludeXmlComments(
         Path.Combine(AppContext.BaseDirectory, $"{Assembly.GetExecutingAssembly().GetName().Name}.xml"),
         includeControllerXmlComments: true);
+
+    // Pin the order in which Swagger UI lists each tag (controller group).
+    // Any tag not listed here is appended afterwards in its original order.
+    // NOTE: The string[] is wrapped in an explicit object[] so that
+    // Swashbuckle's `DocumentFilter<T>(params object[])` extension does not
+    // unpack the string[] into individual positional ctor arguments; the
+    // single object[] element (the string[]) then matches the (string[]) ctor.
+    c.DocumentFilter<TagOrderingDocumentFilter>(new object[] { new[] { "Projects", "Groups", "Subscribers" } });
 });
 
 var app = builder.Build();
