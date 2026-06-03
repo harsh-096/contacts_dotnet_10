@@ -537,6 +537,9 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
 
+        DELETE FROM dbo.GroupContacts
+        WHERE        ContactId = @ContactId;
+
         DELETE FROM dbo.Contacts
         WHERE        ContactId = @ContactId;
 

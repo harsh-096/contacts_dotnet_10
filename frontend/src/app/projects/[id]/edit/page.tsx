@@ -73,7 +73,7 @@ export default function EditProjectPage() {
     <div className="mx-auto max-w-xl">
       <PageHeader
         title={`Edit “${original}”`}
-        description="Provide at least one field. Other fields are left untouched."
+        description="Rename the project. Other fields are left untouched."
         actions={
           <Link href={`/projects/${id}`}>
             <Button variant="secondary">← Back</Button>

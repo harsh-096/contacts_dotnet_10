@@ -2,12 +2,8 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import {
-  ContactsApi,
-  GroupsApi,
-  ProjectsApi,
-} from "@/lib/api";
+import { useState } from "react";
+import { ContactsApi, GroupsApi, ProjectsApi } from "@/lib/api";
 import { useAsync, useMutation } from "@/lib/hooks";
 import { useToast } from "@/components/ui/Toast";
 import { confirmDialog } from "@/components/layout/ConfirmHost";
@@ -19,9 +15,9 @@ import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
-import { Field, Select } from "@/components/ui/Input";
-import { Alert } from "@/components/ui/Alert";
-import { initials, formatPhoneDisplay, formatDate } from "@/lib/format";
+import { Modal } from "@/components/ui/Modal";
+import { Select, Field } from "@/components/ui/Input";
+import { formatDate, formatPhoneDisplay, initials } from "@/lib/format";
 import { describeError } from "@/lib/errors";
 
 export default function GroupDetailPage() {
@@ -33,11 +29,6 @@ export default function GroupDetailPage() {
   const group = useAsync(["group", id], () => GroupsApi.get(id), {
     enabled: Number.isFinite(id) && id > 0,
   });
-  const members = useAsync(
-    ["group", id, "contacts"],
-    () => GroupsApi.contacts(id),
-    { enabled: Number.isFinite(id) && id > 0 }
-  );
   const project = useAsync(
     ["group", id, "project"],
     async () => {
@@ -47,96 +38,70 @@ export default function GroupDetailPage() {
     },
     { enabled: Number.isFinite(id) && id > 0 }
   );
-
-  // Candidates to add: contacts that belong to the same project, are not
-  // already in this group. The frontend never sends phoneNumber — the server
-  // rebuilds it on create/update.
-  const allContacts = useAsync(
-    ["group", id, "project", project.data?.project_id, "contacts"],
-    async () => {
-      if (!project.data) return [];
-      return ContactsApi.byProject(project.data.project_id);
-    },
-    { enabled: !!project.data }
+  const members = useAsync(
+    ["group", id, "members"],
+    () => GroupsApi.getContacts(id),
+    { enabled: Number.isFinite(id) && id > 0 }
   );
+  const allContacts = useAsync(["contacts"], () => ContactsApi.list());
 
   const { run: remove, loading: removing } = useMutation(() =>
     GroupsApi.remove(id)
   );
-  const { run: addContact, loading: adding } = useMutation(
+
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [selectedContactId, setSelectedContactId] = useState(0);
+
+  const addMember = useMutation(
     (contactId: number) => GroupsApi.addContact(id, contactId)
   );
-  const { run: removeContact, loading: removingContact } = useMutation(
+
+  const removeMember = useMutation(
     (contactId: number) => GroupsApi.removeContact(id, contactId)
-  );
-
-  const [candidate, setCandidate] = useState<number | "">("");
-
-  const memberIds = useMemo(
-    () => new Set((members.data ?? []).map((c) => c.contact_id)),
-    [members.data]
-  );
-
-  const candidates = useMemo(
-    () => (allContacts.data ?? []).filter((c) => !memberIds.has(c.contact_id)),
-    [allContacts.data, memberIds]
   );
 
   async function onDelete() {
     if (!group.data) return;
     const ok = await confirmDialog({
       title: "Delete group?",
-      message: `“${group.data.group_name}” will be permanently removed. The API will refuse if it still has contact members — remove them first.`,
+      message: `"${group.data.group_name}" will be permanently removed.`,
       confirmLabel: "Delete",
       danger: true,
     });
     if (!ok) return;
     const result = await remove();
     if (result === null) {
-      toast.push({
-        tone: "error",
-        title: "Delete failed",
-        description: "Remove all contact members first.",
-      });
+      toast.push({ tone: "error", title: "Delete failed" });
       return;
     }
     toast.push({ tone: "success", title: "Group deleted" });
     router.push("/groups");
   }
 
-  async function onAddContact() {
-    if (!candidate) return;
-    const result = await addContact(Number(candidate));
-    if (result === null) {
-      toast.push({
-        tone: "error",
-        title: "Could not add contact",
-        description: "The contact must belong to this group's project.",
-      });
-      return;
+  async function handleAddMember() {
+    if (selectedContactId <= 0) return;
+    const result = await addMember.run(selectedContactId);
+    if (result) {
+      toast.push({ tone: "success", title: "Member added" });
+      setShowAddMember(false);
+      setSelectedContactId(0);
+      members.refresh();
     }
-    toast.push({ tone: "success", title: "Contact added to group" });
-    setCandidate("");
-    members.refresh();
-    allContacts.refresh();
   }
 
-  async function onRemoveContact(contactId: number, name: string) {
+  async function handleRemoveMember(contactId: number, name: string) {
     const ok = await confirmDialog({
-      title: "Remove from group?",
-      message: `Remove “${name}” from this group? The contact itself is not deleted.`,
+      title: "Remove member?",
+      message: `Remove "${name}" from this group?`,
       confirmLabel: "Remove",
       danger: true,
     });
     if (!ok) return;
-    const result = await removeContact(contactId);
-    if (result === null) {
-      toast.push({ tone: "error", title: "Remove failed" });
-      return;
+    const result = await removeMember.run(contactId);
+    if (result) {
+      toast.push({ tone: "success", title: "Member removed" });
+      members.refresh();
     }
-    toast.push({ tone: "success", title: "Contact removed" });
-    members.refresh();
-    allContacts.refresh();
   }
 
   if (group.loading && !group.data) return <FullPageSpinner />;
@@ -147,6 +112,10 @@ export default function GroupDetailPage() {
 
   const g = group.data;
   const memberList = members.data ?? [];
+  const memberIds = new Set(memberList.map((m) => m.contact_id));
+  const availableContacts = (allContacts.data ?? []).filter(
+    (c) => !memberIds.has(c.contact_id)
+  );
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -168,75 +137,68 @@ export default function GroupDetailPage() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
-          <CardBody>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Project</p>
-            {project.loading ? (
-              <div className="mt-2 text-slate-400"><Spinner size={14} /></div>
-            ) : project.data ? (
-              <Link
-                href={`/projects/${project.data.project_id}`}
-                className="mt-2 inline-block text-sm font-semibold text-slate-900 hover:text-brand-600"
-              >
-                {project.data.project_name}
-              </Link>
-            ) : (
-              <p className="mt-2 text-sm text-red-600">{describeError(project.error)}</p>
-            )}
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Members</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {members.loading ? "…" : memberList.length}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {memberList.filter((c) => c.is_subscribed).length} subscribed
-            </p>
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Add member</p>
-            {candidates.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">
-                All eligible contacts in this project are already in this group.
-              </p>
-            ) : (
-              <div className="mt-2 space-y-2">
-                <Field>
-                  <Select
-                    value={candidate}
-                    onChange={(e) => setCandidate(e.target.value ? Number(e.target.value) : "")}
-                  >
-                    <option value="">Pick a contact…</option>
-                    {candidates.map((c) => (
-                      <option key={c.contact_id} value={c.contact_id}>
-                        {c.first_name} {c.last_name} · {formatPhoneDisplay(c.country_code, c.national_number)}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Button
-                  size="sm"
-                  loading={adding}
-                  disabled={!candidate}
-                  onClick={onAddContact}
-                >
-                  Add to group
-                </Button>
+          <CardHeader
+            title="Project"
+            description="The project this group belongs to."
+            actions={
+              project.data ? (
+                <Link href={`/projects/${project.data.project_id}`}>
+                  <Button size="sm" variant="secondary">Open project</Button>
+                </Link>
+              ) : undefined
+            }
+          />
+          {project.loading && !project.data ? (
+            <CardBody>
+              <div className="flex h-24 items-center justify-center text-slate-400">
+                <Spinner />
               </div>
-            )}
+            </CardBody>
+          ) : project.data ? (
+            <CardBody>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-100 text-base">
+                  📁
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {project.data.project_name}
+                  </p>
+                  <p className="text-xs text-slate-500">Project #{project.data.project_id}</p>
+                </div>
+              </div>
+            </CardBody>
+          ) : (
+            <CardBody>
+              <p className="text-sm text-red-600">{describeError(project.error)}</p>
+            </CardBody>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader title="Timestamps" />
+          <CardBody>
+            <dl className="grid grid-cols-1 gap-3 text-sm">
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Group id</dt>
+                <dd className="mt-1 font-mono text-slate-900">#{g.group_id}</dd>
+              </div>
+            </dl>
           </CardBody>
         </Card>
       </div>
 
       <Card>
         <CardHeader
-          title="Members"
-          description={`${memberList.length} contact${memberList.length === 1 ? "" : "s"} in this group`}
+          title={`Members (${memberList.length})`}
+          description="Contacts that belong to this group."
+          actions={
+            <Button size="sm" onClick={() => setShowAddMember(true)} leftIcon={<span>+</span>}>
+              Add member
+            </Button>
+          }
         />
         {members.loading && !members.data ? (
           <CardBody>
@@ -249,7 +211,7 @@ export default function GroupDetailPage() {
             <EmptyState
               icon="👥"
               title="No members yet"
-              description="Use the picker above to add contacts from the same project."
+              description="This group has no contacts. Add contacts to this group."
             />
           </CardBody>
         ) : (
@@ -258,41 +220,39 @@ export default function GroupDetailPage() {
               { key: "name", header: "Name" },
               { key: "phone", header: "Phone" },
               { key: "status", header: "Status" },
-              { key: "joined", header: "Joined" },
-              { key: "actions", header: "", className: "w-44 text-right" },
+              { key: "actions", header: "", className: "w-32 text-right" },
             ]}
-            rows={memberList.map((c) => ({
-              id: c.contact_id,
+            rows={memberList.map((m) => ({
+              id: m.contact_id,
               cells: [
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
-                    {initials(c.first_name, c.last_name)}
+                    {initials(m.first_name, m.last_name)}
                   </div>
                   <Link
-                    href={`/contacts/${c.contact_id}`}
+                    href={`/contacts/${m.contact_id}`}
                     className="font-medium text-slate-900 hover:text-brand-600"
                   >
-                    {c.first_name} {c.last_name}
+                    {m.first_name} {m.last_name}
                   </Link>
                 </div>,
                 <span className="font-mono text-xs text-slate-700">
-                  {formatPhoneDisplay(c.country_code, c.national_number)}
+                  {formatPhoneDisplay(m.country_code, m.national_number)}
                 </span>,
-                c.is_subscribed ? (
+                m.is_subscribed ? (
                   <Badge tone="green">Subscribed</Badge>
                 ) : (
                   <Badge tone="slate">Unsubscribed</Badge>
                 ),
-                <span className="text-xs text-slate-500">{formatDate(c.created_date)}</span>,
-                <div className="flex items-center justify-end gap-2">
-                  <Link href={`/contacts/${c.contact_id}`}>
+                <div className="flex gap-1">
+                  <Link href={`/contacts/${m.contact_id}`}>
                     <Button size="sm" variant="secondary">View</Button>
                   </Link>
                   <Button
                     size="sm"
                     variant="danger"
-                    loading={removingContact}
-                    onClick={() => onRemoveContact(c.contact_id, `${c.first_name} ${c.last_name}`)}
+                    loading={removeMember.loading}
+                    onClick={() => handleRemoveMember(m.contact_id, `${m.first_name} ${m.last_name}`)}
                   >
                     Remove
                   </Button>
@@ -302,6 +262,40 @@ export default function GroupDetailPage() {
           />
         )}
       </Card>
+
+      <Modal
+        open={showAddMember}
+        onClose={() => { setShowAddMember(false); setSelectedContactId(0); }}
+        title="Add member"
+        description={`Add a contact to "${g.group_name}"`}
+        footer={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => { setShowAddMember(false); setSelectedContactId(0); }}>
+              Cancel
+            </Button>
+            <Button size="sm" loading={addMember.loading} onClick={handleAddMember} disabled={selectedContactId <= 0}>
+              Add
+            </Button>
+          </>
+        }
+      >
+        <Field label="Select a contact" required>
+          <Select
+            value={selectedContactId || ""}
+            onChange={(e) => setSelectedContactId(Number(e.target.value))}
+          >
+            <option value="">Choose a contact…</option>
+            {availableContacts.map((c) => (
+              <option key={c.contact_id} value={c.contact_id}>
+                {c.first_name} {c.last_name} · {formatPhoneDisplay(c.country_code, c.national_number)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {addMember.error && (
+          <p className="mt-2 text-xs text-red-600">{describeError(addMember.error)}</p>
+        )}
+      </Modal>
     </div>
   );
 }

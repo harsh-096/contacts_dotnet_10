@@ -9,18 +9,18 @@ namespace ContactSystem.Services
     {
         private readonly IGroupRepository _repo;
         private readonly IProjectRepository _projectRepo;
-        private readonly IGroupContactsRepository _groupContactsRepo;
+        private readonly IContactRepository _contactRepo;
         private readonly ILogger<GroupService> _logger;
 
         public GroupService(
             IGroupRepository repo,
             IProjectRepository projectRepo,
-            IGroupContactsRepository groupContactsRepo,
+            IContactRepository contactRepo,
             ILogger<GroupService> logger)
         {
             _repo = repo;
             _projectRepo = projectRepo;
-            _groupContactsRepo = groupContactsRepo;
+            _contactRepo = contactRepo;
             _logger = logger;
         }
 
@@ -44,7 +44,6 @@ namespace ContactSystem.Services
 
         public async Task<ApiResponse<GroupResponseDto>> CreateAsync(GroupCreateDto dto)
         {
-            // ProjectId is required: a project can have only one group.
             if (dto.ProjectId <= 0)
                 return ApiResponse<GroupResponseDto>.Fail("ProjectId is required.", statusCode: StatusCodes.Status400BadRequest);
 
@@ -53,22 +52,10 @@ namespace ContactSystem.Services
                     $"Project with id {dto.ProjectId} not found.",
                     statusCode: StatusCodes.Status404NotFound);
 
-            // Enforce "one project -> one group" at the service layer too (the DB
-            // also enforces it via UQ_Groups_ProjectId).
-            var existingForProject = await _repo.GetByProjectIdAsync(dto.ProjectId);
-            if (existingForProject.Any())
-            {
-                var existing = existingForProject.First();
-                return ApiResponse<GroupResponseDto>.Fail(
-                    $"A group already exists for project {dto.ProjectId} (groupId={existing.GroupId}, groupName='{existing.GroupName}'). " +
-                    "One project can have only one group.",
-                    statusCode: StatusCodes.Status409Conflict);
-            }
-
             var entity = new Group
             {
-                GroupName  = dto.GroupName.Trim(),
-                ProjectId  = dto.ProjectId
+                GroupName = dto.GroupName.Trim(),
+                ProjectId = dto.ProjectId
             };
 
             var newId = await _repo.CreateAsync(entity);
@@ -90,12 +77,9 @@ namespace ContactSystem.Services
             if (existing is null)
                 return ApiResponse<GroupResponseDto>.Fail($"Group with id {id} not found.", statusCode: StatusCodes.Status404NotFound);
 
-            // Trim only the values that were actually provided.
             var newGroupName = dto.GroupName?.Trim();
             var newProjectId = dto.ProjectId;
 
-            // Project-existence check only runs when the project is being changed
-            // AND a new value was supplied. Omitted projectId is a no-op.
             if (newProjectId is not null
                 && newProjectId != existing.ProjectId
                 && !await _projectRepo.ExistsAsync(newProjectId.Value))
@@ -103,19 +87,6 @@ namespace ContactSystem.Services
                 return ApiResponse<GroupResponseDto>.Fail(
                     $"Project with id {newProjectId} not found.",
                     statusCode: StatusCodes.Status404NotFound);
-            }
-
-            // Enforce "one project -> one group" when changing the project.
-            if (newProjectId is not null && newProjectId != existing.ProjectId)
-            {
-                var conflicting = await _repo.GetByProjectIdAsync(newProjectId.Value);
-                if (conflicting.Any())
-                {
-                    return ApiResponse<GroupResponseDto>.Fail(
-                        $"A different group (groupId={conflicting.First().GroupId}) already exists for project {newProjectId}. " +
-                        "One project can have only one group.",
-                        statusCode: StatusCodes.Status409Conflict);
-                }
             }
 
             var rows = await _repo.UpdateAsync(
@@ -146,17 +117,6 @@ namespace ContactSystem.Services
             if (existing is null)
                 return ApiResponse<bool>.Fail($"Group with id {id} not found.", statusCode: StatusCodes.Status404NotFound);
 
-            // Reject deletion if the group still has members so we surface a friendly
-            // 409 instead of letting the FK violation bubble up as a 500.
-            var memberCount = (await _groupContactsRepo.GetContactsByGroupIdAsync(id)).Count();
-            if (memberCount > 0)
-            {
-                return ApiResponse<bool>.Fail(
-                    $"Group with id {id} still has {memberCount} contact member(s). " +
-                    "Remove all contacts from the group before deleting it.",
-                    statusCode: StatusCodes.Status409Conflict);
-            }
-
             try
             {
                 var rows = await _repo.DeleteAsync(id);
@@ -168,7 +128,7 @@ namespace ContactSystem.Services
             catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 547)
             {
                 return ApiResponse<bool>.Fail(
-                    "Group cannot be deleted because it still has dependent contact members.",
+                    "Group cannot be deleted because of dependent records.",
                     statusCode: StatusCodes.Status409Conflict);
             }
         }
@@ -187,11 +147,84 @@ namespace ContactSystem.Services
             return ApiResponse<IEnumerable<GroupResponseDto>>.Ok(groups.Select(ToDto));
         }
 
+        public async Task<ApiResponse<bool>> AddContactToGroupAsync(int groupId, int contactId)
+        {
+            if (groupId <= 0 || contactId <= 0)
+                return ApiResponse<bool>.Fail("Invalid groupId or contactId.", statusCode: StatusCodes.Status400BadRequest);
+
+            if (!await _contactRepo.ExistsAsync(contactId))
+                return ApiResponse<bool>.Fail($"Contact with id {contactId} not found.", statusCode: StatusCodes.Status404NotFound);
+
+            var group = await _repo.GetByIdAsync(groupId);
+            if (group is null)
+                return ApiResponse<bool>.Fail($"Group with id {groupId} not found.", statusCode: StatusCodes.Status404NotFound);
+
+            try
+            {
+                var result = await _repo.AddContactToGroupAsync(groupId, contactId);
+                return result
+                    ? ApiResponse<bool>.Ok(true, "Contact added to group.")
+                    : ApiResponse<bool>.Fail("Failed to add contact to group.", statusCode: StatusCodes.Status500InternalServerError);
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2627)
+            {
+                return ApiResponse<bool>.Fail("Contact is already a member of this group.", statusCode: StatusCodes.Status409Conflict);
+            }
+        }
+
+        public async Task<ApiResponse<bool>> RemoveContactFromGroupAsync(int groupId, int contactId)
+        {
+            if (groupId <= 0 || contactId <= 0)
+                return ApiResponse<bool>.Fail("Invalid groupId or contactId.", statusCode: StatusCodes.Status400BadRequest);
+
+            var result = await _repo.RemoveContactFromGroupAsync(groupId, contactId);
+            return result
+                ? ApiResponse<bool>.Ok(true, "Contact removed from group.")
+                : ApiResponse<bool>.Fail("Contact not found in this group.", statusCode: StatusCodes.Status404NotFound);
+        }
+
+        public async Task<ApiResponse<IEnumerable<ContactResponseDto>>> GetContactsByGroupIdAsync(int groupId)
+        {
+            if (groupId <= 0)
+                return ApiResponse<IEnumerable<ContactResponseDto>>.Fail("Invalid groupId.", statusCode: StatusCodes.Status400BadRequest);
+
+            var contacts = await _repo.GetContactsByGroupIdAsync(groupId);
+            return ApiResponse<IEnumerable<ContactResponseDto>>.Ok(contacts.Select(ToContactDto));
+        }
+
+        public async Task<ApiResponse<IEnumerable<GroupResponseDto>>> GetGroupsByContactIdAsync(int contactId)
+        {
+            if (contactId <= 0)
+                return ApiResponse<IEnumerable<GroupResponseDto>>.Fail("Invalid contactId.", statusCode: StatusCodes.Status400BadRequest);
+
+            if (!await _contactRepo.ExistsAsync(contactId))
+                return ApiResponse<IEnumerable<GroupResponseDto>>.Fail(
+                    $"Contact with id {contactId} not found.",
+                    statusCode: StatusCodes.Status404NotFound);
+
+            var groups = await _repo.GetGroupsByContactIdAsync(contactId);
+            return ApiResponse<IEnumerable<GroupResponseDto>>.Ok(groups.Select(ToDto));
+        }
+
         private static GroupResponseDto ToDto(Group g) => new()
         {
-            GroupId    = g.GroupId,
-            GroupName  = g.GroupName,
-            ProjectId  = g.ProjectId
+            GroupId   = g.GroupId,
+            GroupName = g.GroupName,
+            ProjectId = g.ProjectId
+        };
+
+        private static ContactResponseDto ToContactDto(Contact c) => new()
+        {
+            ContactId      = c.ContactId,
+            FirstName      = c.FirstName,
+            LastName       = c.LastName,
+            CountryCode    = c.CountryCode,
+            NationalNumber = c.NationalNumber,
+            PhoneNumber    = c.PhoneNumber,
+            ProjectId      = c.ProjectId,
+            IsSubscribed   = c.IsSubscribed,
+            CreatedDate    = c.CreatedDate,
+            UpdatedDate    = c.UpdatedDate
         };
     }
 }

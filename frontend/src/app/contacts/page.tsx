@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ContactsApi, ProjectsApi } from "@/lib/api";
+import { ApiError, ContactsApi, GroupsApi } from "@/lib/api";
 import { useAsync, useMutation } from "@/lib/hooks";
 import { useToast } from "@/components/ui/Toast";
 import { confirmDialog } from "@/components/layout/ConfirmHost";
@@ -13,27 +13,28 @@ import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
-import { Field, Input, Select } from "@/components/ui/Input";
+import { Checkbox, Field, Input, Select } from "@/components/ui/Input";
+import { Modal } from "@/components/ui/Modal";
 import { formatDate, formatPhoneDisplay, initials } from "@/lib/format";
 
 export default function ContactsPage() {
   const toast = useToast();
   const contacts = useAsync(["contacts"], () => ContactsApi.list());
-  const projects = useAsync(["projects"], () => ProjectsApi.list());
+  const allGroups = useAsync(["groups"], () => GroupsApi.list());
 
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState<number | "all">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "subscribed" | "unsubscribed">("all");
 
-  const { run: remove, loading: removing } = useMutation((id: number) =>
-    ContactsApi.remove(id)
-  );
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [pendingGroupId, setPendingGroupId] = useState(0);
+  const [showAddGroup, setShowAddGroup] = useState(false);
 
   const projectById = useMemo(() => {
     const m = new Map<number, string>();
-    for (const p of projects.data ?? []) m.set(p.project_id, p.project_name);
+    for (const c of contacts.data ?? []) m.set(c.project_id, "");
     return m;
-  }, [projects.data]);
+  }, [contacts.data]);
 
   const filtered = useMemo(() => {
     const list = contacts.data ?? [];
@@ -52,21 +53,85 @@ export default function ContactsPage() {
     });
   }, [contacts.data, query, projectFilter, statusFilter]);
 
-  async function onDelete(id: number, name: string) {
+  function toggleAll() {
+    if (selected.size === filtered.length && filtered.length > 0) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filtered.map((c) => c.contact_id)));
+    }
+  }
+
+  function toggleOne(id: number) {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  }
+
+  const bulkDelete = useMutation(async () => {
+    const ids = [...selected];
+    const errors: string[] = [];
+    let succeeded = 0;
+    for (const id of ids) {
+      try {
+        await ContactsApi.remove(id);
+        succeeded++;
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : "Unknown error";
+        errors.push(msg);
+      }
+    }
+    if (succeeded > 0) {
+      toast.push({ tone: "success", title: `${succeeded} contact${succeeded === 1 ? "" : "s"} deleted` });
+    }
+    for (const msg of errors) {
+      toast.push({ tone: "error", title: msg });
+    }
+    setSelected(new Set());
+    contacts.refresh();
+  });
+
+  const bulkAddGroup = useMutation(async (groupId: number) => {
+    const ids = [...selected];
+    const errors: string[] = [];
+    let succeeded = 0;
+    for (const id of ids) {
+      try {
+        await GroupsApi.addContact(groupId, id);
+        succeeded++;
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : "Unknown error";
+        errors.push(msg);
+      }
+    }
+    if (succeeded > 0) {
+      toast.push({ tone: "success", title: `${succeeded} contact${succeeded === 1 ? "" : "s"} added to group` });
+    }
+    for (const msg of errors) {
+      toast.push({ tone: "error", title: msg });
+    }
+    if (succeeded > 0) {
+      setShowAddGroup(false);
+      setPendingGroupId(0);
+      setSelected(new Set());
+      contacts.refresh();
+    }
+  });
+
+  async function handleBulkDelete() {
     const ok = await confirmDialog({
-      title: "Delete contact?",
-      message: `“${name}” will be permanently removed. Any group memberships are removed automatically.`,
-      confirmLabel: "Delete",
+      title: `Delete ${selected.size} contact${selected.size === 1 ? "" : "s"}?`,
+      message: `${selected.size} contact${selected.size === 1 ? "" : "s"} will be permanently removed. This action cannot be undone.`,
+      confirmLabel: `Delete ${selected.size}`,
       danger: true,
     });
     if (!ok) return;
-    const result = await remove(id);
-    if (result === null) {
-      toast.push({ tone: "error", title: "Delete failed" });
-      return;
-    }
-    toast.push({ tone: "success", title: "Contact deleted" });
-    contacts.refresh();
+    await bulkDelete.run();
+  }
+
+  async function handleBulkAddGroup() {
+    if (pendingGroupId <= 0) return;
+    await bulkAddGroup.run(pendingGroupId);
   }
 
   if (contacts.loading && !contacts.data) return <FullPageSpinner />;
@@ -75,6 +140,8 @@ export default function ContactsPage() {
   }
 
   const list = contacts.data ?? [];
+  const groups = allGroups.data ?? [];
+  const hasSelection = selected.size > 0;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -104,11 +171,13 @@ export default function ContactsPage() {
             }
           >
             <option value="all">All projects</option>
-            {(projects.data ?? []).map((p) => (
-              <option key={p.project_id} value={p.project_id}>
-                {p.project_name}
-              </option>
-            ))}
+            {(contacts.data ?? [])
+              .filter((c, i, a) => a.findIndex((x) => x.project_id === c.project_id) === i)
+              .map((c) => (
+                <option key={c.project_id} value={c.project_id}>
+                  Project #{c.project_id}
+                </option>
+              ))}
           </Select>
         </Field>
         <Field label="Status">
@@ -122,6 +191,41 @@ export default function ContactsPage() {
           </Select>
         </Field>
       </div>
+
+      {hasSelection && (
+        <div className="flex items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-3 shadow-soft">
+          <span className="text-sm font-medium text-brand-800">
+            {selected.size} selected
+          </span>
+          <div className="ml-auto flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<span>+</span>}
+              onClick={() => setShowAddGroup(true)}
+              disabled={!hasSelection}
+            >
+              Add to Groups
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              loading={bulkDelete.loading}
+              onClick={handleBulkDelete}
+              disabled={!hasSelection}
+            >
+              Delete Contacts
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setSelected(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
 
       {list.length === 0 ? (
         <EmptyState
@@ -143,16 +247,29 @@ export default function ContactsPage() {
       ) : (
         <DataTable
           columns={[
+            {
+              key: "select",
+              header: (
+                <Checkbox
+                  checked={filtered.length > 0 && selected.size === filtered.length}
+                  onChange={toggleAll}
+                />
+              ),
+              className: "w-10",
+            },
             { key: "name", header: "Name" },
             { key: "phone", header: "Phone" },
-            { key: "project", header: "Project" },
             { key: "status", header: "Status" },
             { key: "created", header: "Created" },
-            { key: "actions", header: "", className: "w-44 text-right" },
+            { key: "actions", header: "", className: "w-20 text-right" },
           ]}
           rows={filtered.map((c) => ({
             id: c.contact_id,
             cells: [
+              <Checkbox
+                checked={selected.has(c.contact_id)}
+                onChange={() => toggleOne(c.contact_id)}
+              />,
               <div className="flex items-center gap-3">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
                   {initials(c.first_name, c.last_name)}
@@ -172,12 +289,6 @@ export default function ContactsPage() {
                   phone #{c.phone_number}
                 </span>
               </div>,
-              <div className="flex items-center gap-2">
-                <Badge tone="brand">#{c.project_id}</Badge>
-                <span className="text-sm text-slate-700">
-                  {projectById.get(c.project_id) ?? "—"}
-                </span>
-              </div>,
               c.is_subscribed ? (
                 <Badge tone="green">Subscribed</Badge>
               ) : (
@@ -188,14 +299,6 @@ export default function ContactsPage() {
                 <Link href={`/contacts/${c.contact_id}`}>
                   <Button size="sm" variant="secondary">View</Button>
                 </Link>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  loading={removing}
-                  onClick={() => onDelete(c.contact_id, `${c.first_name} ${c.last_name}`)}
-                >
-                  Delete
-                </Button>
               </div>,
             ],
           }))}
@@ -207,6 +310,40 @@ export default function ContactsPage() {
           <Spinner size={12} /> Refreshing…
         </div>
       )}
+
+      <Modal
+        open={showAddGroup}
+        onClose={() => { setShowAddGroup(false); setPendingGroupId(0); }}
+        title="Add to group"
+        description={`Add ${selected.size} contact${selected.size === 1 ? "" : "s"} to a group.`}
+        footer={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => { setShowAddGroup(false); setPendingGroupId(0); }}>
+              Cancel
+            </Button>
+            <Button size="sm" loading={bulkAddGroup.loading} onClick={handleBulkAddGroup} disabled={pendingGroupId <= 0}>
+              Add
+            </Button>
+          </>
+        }
+      >
+        <Field label="Select a group" required>
+          <Select
+            value={pendingGroupId || ""}
+            onChange={(e) => setPendingGroupId(Number(e.target.value))}
+          >
+            <option value="">Choose a group…</option>
+            {groups.map((g) => (
+              <option key={g.group_id} value={g.group_id}>
+                {g.group_name} (Project #{g.project_id})
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {bulkAddGroup.error && (
+          <p className="mt-2 text-xs text-red-600">{bulkAddGroup.error.message}</p>
+        )}
+      </Modal>
     </div>
   );
 }

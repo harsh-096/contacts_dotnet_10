@@ -106,7 +106,20 @@ END
 GO
 
 -- ----------------------------------------------------------------
--- 5. Groups.ProjectId -- enforce NOT NULL.
+-- 5. Drop the non-unique FK index before altering the column.
+-- ----------------------------------------------------------------
+IF EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE  name = 'IX_Groups_ProjectId'
+      AND  object_id = OBJECT_ID('dbo.Groups')
+)
+BEGIN
+    DROP INDEX IX_Groups_ProjectId ON dbo.Groups;
+END
+GO
+
+-- ----------------------------------------------------------------
+-- 6. Groups.ProjectId -- enforce NOT NULL.
 --    One project -> one group, so ProjectId is now mandatory.
 -- ----------------------------------------------------------------
 IF EXISTS (
@@ -126,37 +139,19 @@ END
 GO
 
 -- ----------------------------------------------------------------
--- 6. Groups.ProjectId -- UNIQUE. Destructive dedup pass FIRST:
---    keep the lowest GroupId per project and delete the rest.
---    Only runs when the IX_Groups_ProjectId is not yet unique.
+-- 7. Groups.ProjectId -- UNIQUE (dropped later by script 10).
+--    Destructive dedup pass FIRST: keep the lowest GroupId per
+--    project and delete the rest.
 -- ----------------------------------------------------------------
-IF EXISTS (
-    SELECT 1 FROM sys.indexes
-    WHERE  object_id = OBJECT_ID('dbo.Groups')
-      AND  name = 'IX_Groups_ProjectId'
+;WITH Duplicates AS (
+    SELECT GroupId,
+           ROW_NUMBER() OVER (PARTITION BY ProjectId ORDER BY GroupId ASC) AS rn
+    FROM   dbo.Groups
 )
-BEGIN
-    ;WITH Duplicates AS (
-        SELECT GroupId,
-               ROW_NUMBER() OVER (PARTITION BY ProjectId ORDER BY GroupId ASC) AS rn
-        FROM   dbo.Groups
-    )
-    DELETE g
-    FROM   dbo.Groups g
-    INNER JOIN Duplicates d ON g.GroupId = d.GroupId
-    WHERE  d.rn > 1;
-END
-GO
-
--- Drop the old non-unique FK index; we will replace it with a UNIQUE index.
-IF EXISTS (
-    SELECT 1 FROM sys.indexes
-    WHERE  name = 'IX_Groups_ProjectId'
-      AND  object_id = OBJECT_ID('dbo.Groups')
-)
-BEGIN
-    DROP INDEX IX_Groups_ProjectId ON dbo.Groups;
-END
+DELETE g
+FROM   dbo.Groups g
+INNER JOIN Duplicates d ON g.GroupId = d.GroupId
+WHERE  d.rn > 1;
 GO
 
 IF NOT EXISTS (
@@ -165,14 +160,13 @@ IF NOT EXISTS (
       AND  object_id = OBJECT_ID('dbo.Groups')
 )
 BEGIN
-    -- UNIQUE constraint creates a backing index automatically.
     ALTER TABLE dbo.Groups
         ADD CONSTRAINT UQ_Groups_ProjectId UNIQUE (ProjectId);
 END
 GO
 
 -- ----------------------------------------------------------------
--- 7. GroupContacts -- new junction table.
+-- 8. GroupContacts -- new junction table.
 -- ----------------------------------------------------------------
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='GroupContacts' AND xtype='U')
 BEGIN
@@ -187,7 +181,7 @@ END
 GO
 
 -- ----------------------------------------------------------------
--- 8. GroupContacts FKs and supporting indexes.
+-- 9. GroupContacts FKs and supporting indexes.
 -- ----------------------------------------------------------------
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys

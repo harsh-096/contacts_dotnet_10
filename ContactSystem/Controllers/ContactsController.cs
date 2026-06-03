@@ -14,16 +14,16 @@ namespace ContactSystem.Controllers
     public class ContactsController : ControllerBase
     {
         private readonly IContactService _service;
-        private readonly IGroupContactsService _groupContactsService;
+        private readonly IGroupService _groupService;
         private readonly ILogger<ContactsController> _logger;
 
         public ContactsController(
             IContactService service,
-            IGroupContactsService groupContactsService,
+            IGroupService groupService,
             ILogger<ContactsController> logger)
         {
             _service = service;
-            _groupContactsService = groupContactsService;
+            _groupService = groupService;
             _logger = logger;
         }
 
@@ -85,14 +85,14 @@ namespace ContactSystem.Controllers
                 : StatusCode(result.StatusCode, result);
         }
 
-        /// <summary>Get every group a contact is a member of.</summary>
+        /// <summary>Get every group a contact owns.</summary>
         /// <param name="contactId">Contact id.</param>
         /// <response code="200">Groups retrieved successfully.</response>
         /// <response code="404">Contact not Found.</response>
         [HttpGet("{contactId:int}/groups")]
         [SwaggerOperation(
             Summary = "Retrieve all groups a contact belongs to",
-            Description = "Returns every group that the supplied contact is a member of, via the GroupContacts junction table.",
+            Description = "Returns every group that the supplied contact is a member of via the GroupContacts junction.",
             OperationId = "GetGroupsByContactId")]
         [SwaggerResponse(StatusCodes.Status200OK, "Groups retrieved successfully.",
             typeof(ApiResponse<IEnumerable<GroupResponseDto>>))]
@@ -100,7 +100,7 @@ namespace ContactSystem.Controllers
         public async Task<ActionResult<ApiResponse<IEnumerable<GroupResponseDto>>>> GetGroupsByContactId(
             [SwaggerParameter("The contact id.", Required = true)] int contactId)
         {
-            var result = await _groupContactsService.GetGroupsByContactIdAsync(contactId);
+            var result = await _groupService.GetGroupsByContactIdAsync(contactId);
             return result.Success
                 ? Ok(result)
                 : StatusCode(result.StatusCode, result);
@@ -185,7 +185,7 @@ namespace ContactSystem.Controllers
         [SwaggerOperation(
             Summary = "Delete a contact",
             Description = "Permanently removes the contact record identified by id. " +
-                          "Any GroupContacts rows that reference this contact are removed automatically before the contact is deleted.",
+                          "Junction entries in GroupContacts are cleaned up automatically.",
             OperationId = "DeleteContact")]
         [SwaggerResponse(StatusCodes.Status200OK, "Contact deleted successfully.",
             typeof(ApiResponse<bool>))]

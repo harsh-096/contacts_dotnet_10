@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
 import { ContactsApi, GroupsApi, ProjectsApi } from "@/lib/api";
 import { useAsync, useMutation } from "@/lib/hooks";
 import { useToast } from "@/components/ui/Toast";
@@ -26,14 +25,14 @@ export default function ProjectDetailPage() {
   const project = useAsync(["project", id], () => ProjectsApi.get(id), {
     enabled: Number.isFinite(id) && id > 0,
   });
-  const groups = useAsync(
-    ["groups", "byProject", id],
-    () => GroupsApi.byProject(id),
-    { enabled: Number.isFinite(id) && id > 0 }
-  );
   const contacts = useAsync(
     ["contacts", "byProject", id],
     () => ContactsApi.byProject(id),
+    { enabled: Number.isFinite(id) && id > 0 }
+  );
+  const groups = useAsync(
+    ["groups", "byProject", id],
+    () => GroupsApi.byProject(id),
     { enabled: Number.isFinite(id) && id > 0 }
   );
 
@@ -41,13 +40,11 @@ export default function ProjectDetailPage() {
     ProjectsApi.remove(id)
   );
 
-  const group = useMemo(() => (groups.data ?? [])[0] ?? null, [groups.data]);
-
   async function onDelete() {
     if (!project.data) return;
     const ok = await confirmDialog({
       title: "Delete project?",
-      message: `“${project.data.project_name}” will be permanently removed. The API will refuse if it still has dependent groups or contacts.`,
+      message: `“${project.data.project_name}” will be permanently removed. The API will refuse if it still has dependent contacts.`,
       confirmLabel: "Delete",
       danger: true,
     });
@@ -57,7 +54,7 @@ export default function ProjectDetailPage() {
       toast.push({
         tone: "error",
         title: "Delete failed",
-        description: "Make sure this project has no groups or contacts first.",
+        description: "Make sure this project has no contacts first.",
       });
       return;
     }
@@ -97,31 +94,6 @@ export default function ProjectDetailPage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card>
           <CardBody>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Group</p>
-            {group ? (
-              <div className="mt-2 flex items-center justify-between">
-                <Link
-                  href={`/groups/${group.group_id}`}
-                  className="text-sm font-semibold text-slate-900 hover:text-brand-600"
-                >
-                  {group.group_name}
-                </Link>
-                <Badge tone="brand">#{group.group_id}</Badge>
-              </div>
-            ) : groups.loading ? (
-              <div className="mt-2 text-slate-400"><Spinner size={14} /></div>
-            ) : (
-              <div className="mt-2 flex items-center justify-between">
-                <p className="text-sm text-slate-500">No group yet</p>
-                <Link href={`/groups/new?projectId=${p.project_id}`}>
-                  <Button size="sm" variant="secondary">+ Add</Button>
-                </Link>
-              </div>
-            )}
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Contacts</p>
             <p className="mt-2 text-2xl font-semibold text-slate-900">
               {contacts.loading ? "…" : contactList.length}
@@ -133,16 +105,25 @@ export default function ProjectDetailPage() {
         </Card>
         <Card>
           <CardBody>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Groups</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">
+              {groups.loading ? "…" : (groups.data?.length ?? 0)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Speciality teams in this project
+            </p>
+          </CardBody>
+        </Card>
+        <Card>
+          <CardBody>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Quick actions</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Link href={`/contacts/new?projectId=${p.project_id}`}>
                 <Button size="sm">+ New contact</Button>
               </Link>
-              {!group && (
-                <Link href={`/groups/new?projectId=${p.project_id}`}>
-                  <Button size="sm" variant="secondary">+ New group</Button>
-                </Link>
-              )}
+              <Link href={`/groups/new?projectId=${p.project_id}`}>
+                <Button size="sm" variant="secondary">+ New group</Button>
+              </Link>
             </div>
           </CardBody>
         </Card>
@@ -182,38 +163,40 @@ export default function ProjectDetailPage() {
             columns={[
               { key: "name", header: "Name" },
               { key: "phone", header: "Phone" },
+              { key: "groups", header: "Groups" },
               { key: "status", header: "Status" },
               { key: "created", header: "Created" },
               { key: "actions", header: "", className: "w-32 text-right" },
             ]}
           rows={contactList.map((c) => ({
-            id: c.contact_id,
-            cells: [
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
-                  {initials(c.first_name, c.last_name)}
-                </div>
-                <Link
-                  href={`/contacts/${c.contact_id}`}
-                  className="font-medium text-slate-900 hover:text-brand-600"
-                >
-                  {c.first_name} {c.last_name}
-                </Link>
-              </div>,
-              <span className="font-mono text-xs text-slate-700">
-                {formatPhoneDisplay(c.country_code, c.national_number)}
-              </span>,
-              c.is_subscribed ? (
-                <Badge tone="green">Subscribed</Badge>
-              ) : (
-                <Badge tone="slate">Unsubscribed</Badge>
-              ),
-              <span className="text-xs text-slate-500">{formatDate(c.created_date)}</span>,
-              <Link href={`/contacts/${c.contact_id}`}>
-                <Button size="sm" variant="secondary">View</Button>
-              </Link>,
-            ],
-          }))}
+              id: c.contact_id,
+              cells: [
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
+                    {initials(c.first_name, c.last_name)}
+                  </div>
+                  <Link
+                    href={`/contacts/${c.contact_id}`}
+                    className="font-medium text-slate-900 hover:text-brand-600"
+                  >
+                    {c.first_name} {c.last_name}
+                  </Link>
+                </div>,
+                <span className="font-mono text-xs text-slate-700">
+                  {formatPhoneDisplay(c.country_code, c.national_number)}
+                </span>,
+                <span className="text-xs text-slate-500">—</span>,
+                c.is_subscribed ? (
+                  <Badge tone="green">Subscribed</Badge>
+                ) : (
+                  <Badge tone="slate">Unsubscribed</Badge>
+                ),
+                <span className="text-xs text-slate-500">{formatDate(c.created_date)}</span>,
+                <Link href={`/contacts/${c.contact_id}`}>
+                  <Button size="sm" variant="secondary">View</Button>
+                </Link>,
+              ],
+            }))}
           />
         )}
       </Card>

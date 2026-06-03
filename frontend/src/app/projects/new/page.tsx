@@ -41,7 +41,7 @@ export default function NewProjectPage() {
     <div className="mx-auto max-w-xl">
       <PageHeader
         title="New project"
-        description="A project is the top-level container for groups and contacts."
+        description="A project is the top-level container for contacts. Each contact can own groups."
         actions={
           <Link href="/projects">
             <Button variant="secondary">← Back</Button>

@@ -158,18 +158,18 @@ namespace ContactSystem.Repositories
             return list;
         }
 
-        private static Contact Map(SqlDataReader r) => new()
+        public async Task<bool> ExistsAsync(int id)
         {
-            ContactId      = r.GetInt32(r.GetOrdinal("ContactId")),
-            FirstName      = r.GetString(r.GetOrdinal("FirstName")),
-            LastName       = r.GetString(r.GetOrdinal("LastName")),
-            CountryCode    = r.GetString(r.GetOrdinal("CountryCode")),
-            NationalNumber = r.GetString(r.GetOrdinal("NationalNumber")),
-            PhoneNumber    = r.GetInt64(r.GetOrdinal("PhoneNumber")),
-            ProjectId      = r.GetInt32(r.GetOrdinal("ProjectId")),
-            IsSubscribed   = r.GetBoolean(r.GetOrdinal("IsSubscribed")),
-            CreatedDate    = r.GetDateTime(r.GetOrdinal("CreatedDate")),
-            UpdatedDate    = r.IsDBNull(r.GetOrdinal("UpdatedDate")) ? null : r.GetDateTime(r.GetOrdinal("UpdatedDate"))
-        };
+            const string sql = "SELECT COUNT(1) FROM dbo.Contacts WHERE ContactId = @ContactId;";
+
+            await using var conn = await _db.GetConnectionAsync();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.Add(new SqlParameter("@ContactId", SqlDbType.Int) { Value = id });
+
+            var count = Convert.ToInt32(await cmd.ExecuteScalarAsync());
+            return count > 0;
+        }
+
+        private static Contact Map(SqlDataReader r) => ContactReader.Map(r);
     }
 }

@@ -25,6 +25,8 @@ export interface CreateProjectInput {
 export type UpdateProjectInput = Partial<CreateProjectInput>;
 
 // -------- Group --------
+// A group belongs to a project and can contain many contacts
+// via the GroupContacts junction table.
 export interface Group {
   group_id: number;
   group_name: string;

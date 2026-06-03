@@ -95,23 +95,18 @@ export const GroupsApi = {
   get: (id: number) => request<Group>(`/api/Groups/${id}`),
   byProject: (projectId: number) =>
     request<Group[]>(`/api/Groups/project/${projectId}`),
+  getContacts: (groupId: number) =>
+    request<Contact[]>(`/api/Groups/${groupId}/contacts`),
+  addContact: (groupId: number, contactId: number) =>
+    request<boolean>(`/api/Groups/${groupId}/contacts/${contactId}`, { method: "POST" }),
+  removeContact: (groupId: number, contactId: number) =>
+    request<boolean>(`/api/Groups/${groupId}/contacts/${contactId}`, { method: "DELETE" }),
   create: (input: CreateGroupInput) =>
     request<Group>("/api/Groups", { method: "POST", body: input }),
   update: (id: number, input: UpdateGroupInput) =>
     request<Group>(`/api/Groups/${id}`, { method: "PUT", body: input }),
   remove: (id: number) =>
     request<boolean>(`/api/Groups/${id}`, { method: "DELETE" }),
-
-  contacts: (groupId: number) =>
-    request<Contact[]>(`/api/Groups/${groupId}/contacts`),
-  addContact: (groupId: number, contactId: number) =>
-    request<boolean>(`/api/Groups/${groupId}/contacts/${contactId}`, {
-      method: "POST",
-    }),
-  removeContact: (groupId: number, contactId: number) =>
-    request<boolean>(`/api/Groups/${groupId}/contacts/${contactId}`, {
-      method: "DELETE",
-    }),
 };
 
 // -------- Contacts --------

@@ -91,25 +91,29 @@ GO
 -- ----------------------------------------------------------------
 -- 4. Backfill the new columns from PhoneNumberOld (best-effort
 --    country-code detection: +1 and +7 = 1-digit, otherwise 2-digit).
+--    Uses dynamic SQL so the script compiles even when the column
+--    does not exist (fresh-database scenario).
 -- ----------------------------------------------------------------
 IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.Subscribers') AND name = 'PhoneNumberOld')
 BEGIN
-    UPDATE dbo.Subscribers
-    SET    CountryCode =
-               CASE
-                   WHEN LEFT(PhoneNumberOld, 2) IN ('+1', '+7') THEN LEFT(PhoneNumberOld, 2)
-                   ELSE LEFT(PhoneNumberOld, 3)
-               END
-    WHERE  PhoneNumberOld IS NOT NULL
-      AND  CountryCode IS NULL;
+    EXEC('
+        UPDATE dbo.Subscribers
+        SET    CountryCode =
+                   CASE
+                       WHEN LEFT(PhoneNumberOld, 2) IN (''+1'', ''+7'') THEN LEFT(PhoneNumberOld, 2)
+                       ELSE LEFT(PhoneNumberOld, 3)
+                   END
+        WHERE  PhoneNumberOld IS NOT NULL
+          AND  CountryCode IS NULL;
 
-    UPDATE dbo.Subscribers
-    SET    NationalNumber = SUBSTRING(PhoneNumberOld,
-                                      LEN(CountryCode) + 1,
-                                      LEN(PhoneNumberOld) - LEN(CountryCode) + 1),
-           PhoneNumber    = REPLACE(PhoneNumberOld, '+', '')
-    WHERE  PhoneNumberOld IS NOT NULL
-      AND  (NationalNumber IS NULL OR PhoneNumber IS NULL);
+        UPDATE dbo.Subscribers
+        SET    NationalNumber = SUBSTRING(PhoneNumberOld,
+                                          LEN(CountryCode) + 1,
+                                          LEN(PhoneNumberOld) - LEN(CountryCode) + 1),
+               PhoneNumber    = REPLACE(PhoneNumberOld, ''+'', '''')
+        WHERE  PhoneNumberOld IS NOT NULL
+          AND  (NationalNumber IS NULL OR PhoneNumber IS NULL);
+    ');
 END
 GO
 

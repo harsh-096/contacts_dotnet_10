@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo } from "react";
 import { ContactsApi, GroupsApi, ProjectsApi } from "@/lib/api";
 import { useAsync, useMutation } from "@/lib/hooks";
 import { useToast } from "@/components/ui/Toast";
@@ -16,7 +15,6 @@ import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { Badge } from "@/components/ui/Badge";
 
 export default function ProjectsPage() {
-  const router = useRouter();
   const toast = useToast();
   const projects = useAsync(["projects"], () => ProjectsApi.list());
   const groups = useAsync(["groups"], () => GroupsApi.list());
@@ -29,7 +27,7 @@ export default function ProjectsPage() {
   async function onDelete(id: number, name: string) {
     const ok = await confirmDialog({
       title: "Delete project?",
-      message: `“${name}” will be permanently removed. The API will refuse if it still has dependent groups or contacts.`,
+      message: `“${name}” will be permanently removed. The API will refuse if it still has dependent contacts.`,
       confirmLabel: "Delete",
       danger: true,
     });
@@ -39,7 +37,7 @@ export default function ProjectsPage() {
       toast.push({
         tone: "error",
         title: "Delete failed",
-        description: "Make sure this project has no groups or contacts first.",
+        description: "Make sure this project has no contacts first.",
       });
       return;
     }
@@ -47,26 +45,35 @@ export default function ProjectsPage() {
     projects.refresh();
   }
 
+  // Groups belong to projects directly via project_id.
+  const groupCountByProject = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const g of groups.data ?? []) {
+      m.set(g.project_id, (m.get(g.project_id) ?? 0) + 1);
+    }
+    return m;
+  }, [groups.data]);
+
+  const contactCountByProject = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const c of contacts.data ?? []) {
+      m.set(c.project_id, (m.get(c.project_id) ?? 0) + 1);
+    }
+    return m;
+  }, [contacts.data]);
+
   if (projects.loading && !projects.data) return <FullPageSpinner />;
   if (projects.error && !projects.data) {
     return <PageError error={projects.error} onRetry={projects.refresh} />;
   }
 
   const list = projects.data ?? [];
-  const groupCountByProject = new Map<number, number>();
-  const contactCountByProject = new Map<number, number>();
-  for (const g of groups.data ?? []) {
-    groupCountByProject.set(g.project_id, (groupCountByProject.get(g.project_id) ?? 0) + 1);
-  }
-  for (const c of contacts.data ?? []) {
-    contactCountByProject.set(c.project_id, (contactCountByProject.get(c.project_id) ?? 0) + 1);
-  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader
         title="Projects"
-        description="Top-level containers that own groups and contacts."
+        description="Top-level containers that own contacts. Each contact can have many groups."
         actions={
           <Link href="/projects/new">
             <Button>+ New project</Button>
@@ -78,7 +85,7 @@ export default function ProjectsPage() {
         <EmptyState
           icon="📁"
           title="No projects yet"
-          description="Create your first project to start grouping contacts."
+          description="Create your first project to start adding contacts."
           action={
             <Link href="/projects/new">
               <Button>+ New project</Button>

@@ -54,7 +54,7 @@ export default function ContactDetailPage() {
     if (!contact.data) return;
     const ok = await confirmDialog({
       title: "Delete contact?",
-      message: `“${contact.data.first_name} ${contact.data.last_name}” will be permanently removed. Group memberships are removed automatically.`,
+      message: `“${contact.data.first_name} ${contact.data.last_name}” will be permanently removed.`,
       confirmLabel: "Delete",
       danger: true,
     });
@@ -177,7 +177,7 @@ export default function ContactDetailPage() {
 
       <Card>
         <CardHeader
-          title="Group memberships"
+          title="Groups this contact belongs to"
           description={`${groupList.length} group${groupList.length === 1 ? "" : "s"}`}
         />
         {groups.loading && !groups.data ? (
@@ -190,8 +190,8 @@ export default function ContactDetailPage() {
           <CardBody>
             <EmptyState
               icon="👥"
-              title="Not a member of any group"
-              description="Open a group belonging to the same project to add this contact."
+              title="Not in any groups"
+              description="This contact hasn't been added to any groups yet."
             />
           </CardBody>
         ) : (
@@ -212,7 +212,7 @@ export default function ContactDetailPage() {
                 >
                   {g.group_name}
                 </Link>,
-                <Badge tone="brand">#{g.project_id}</Badge>,
+                <span className="font-mono text-xs text-slate-500">Project #{g.project_id}</span>,
                 <Link href={`/groups/${g.group_id}`}>
                   <Button size="sm" variant="secondary">View group</Button>
                 </Link>,

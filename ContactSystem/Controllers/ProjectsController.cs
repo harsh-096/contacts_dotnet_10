@@ -122,18 +122,19 @@ namespace ContactSystem.Controllers
         /// <param name="id">Project id to delete.</param>
         /// <response code="200">Project deleted.</response>
         /// <response code="404">Not Found.</response>
-        /// <response code="409">Project still has dependent subscribers or groups.</response>
+        /// <response code="409">Project still has dependent contacts.</response>
         [HttpDelete("{id:int}")]
         [SwaggerOperation(
             Summary = "Delete a project",
             Description = "Permanently removes the project record identified by id. " +
-                          "Returns 409 if the project still has subscribers or groups attached; " +
-                          "remove them first.",
+                          "Returns 409 if the project still has contacts attached; " +
+                          "remove them first. Groups are owned by contacts and are " +
+                          "removed transitively when their owning contact is deleted.",
             OperationId = "DeleteProject")]
         [SwaggerResponse(StatusCodes.Status200OK, "Project deleted successfully.",
             typeof(ApiResponse<bool>))]
         [SwaggerResponse(StatusCodes.Status404NotFound, "Not Found.")]
-        [SwaggerResponse(StatusCodes.Status409Conflict, "Project still has dependent subscribers or groups.")]
+        [SwaggerResponse(StatusCodes.Status409Conflict, "Project still has dependent contacts.")]
         public async Task<ActionResult<ApiResponse<bool>>> Delete(
             [SwaggerParameter("The project id.", Required = true)] int id)
         {

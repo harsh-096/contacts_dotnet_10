@@ -7,7 +7,6 @@ namespace ContactSystem.DTOs.Examples
         public GroupCreateDto GetExamples() => new()
         {
             GroupName = "Backend",
-            // ProjectId is REQUIRED — a project can have only one group.
             ProjectId = 1
         };
     }
@@ -26,7 +25,7 @@ namespace ContactSystem.DTOs.Examples
         public GroupCreateDto GetExamples() => new()
         {
             GroupName = "Mobile",
-            ProjectId = 1
+            ProjectId = 2
         };
     }
 
@@ -34,19 +33,14 @@ namespace ContactSystem.DTOs.Examples
     {
         public GroupUpdateDto GetExamples() => new()
         {
-            // Partial update example: only groupName is being changed.
-            // All other fields are omitted and will be left untouched in the database.
             GroupName = "Backend-Renamed"
         };
     }
 
-    public class UpdateGroupExample_MoveProject : IExamplesProvider<GroupUpdateDto>
+    public class UpdateGroupExample_MoveContact : IExamplesProvider<GroupUpdateDto>
     {
         public GroupUpdateDto GetExamples() => new()
         {
-            // Move the group to a different project. The target project must
-            // exist and must not already own a different group, otherwise
-            // the API returns 409 Conflict.
             ProjectId = 2
         };
     }

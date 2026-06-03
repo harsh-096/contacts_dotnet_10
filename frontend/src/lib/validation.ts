@@ -41,10 +41,17 @@ export const nationalNumberField = z
     "NationalNumber must contain digits only (no '+', spaces, or dashes)."
   );
 
+// A project id: must be a positive integer.
 export const projectIdField = z
   .number({ invalid_type_error: "Project is required." })
   .int()
   .positive("Project is required.");
+
+// A contact id: must be a positive integer.
+export const contactIdField = z
+  .number({ invalid_type_error: "Contact is required." })
+  .int()
+  .positive("Contact is required.");
 
 // -------- Projects --------
 export const projectCreateSchema = z.object({
@@ -61,6 +68,8 @@ export const projectUpdateSchema = z
   });
 
 // -------- Groups --------
+// A group belongs to a project and can contain many contacts
+// via the GroupContacts junction table.
 export const groupCreateSchema = z.object({
   group_name: longNameField("GroupName"),
   project_id: projectIdField,

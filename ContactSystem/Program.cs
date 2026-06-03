@@ -67,8 +67,6 @@ builder.Services.AddScoped<IProjectRepository, ProjectRepository>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IGroupRepository, GroupRepository>();
 builder.Services.AddScoped<IGroupService, GroupService>();
-builder.Services.AddScoped<IGroupContactsRepository, GroupContactsRepository>();
-builder.Services.AddScoped<IGroupContactsService, GroupContactsService>();
 
 // ---- Swagger / OpenAPI ----
 builder.Services.AddEndpointsApiExplorer();

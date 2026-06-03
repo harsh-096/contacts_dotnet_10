@@ -9,18 +9,15 @@ namespace ContactSystem.Services
     {
         private readonly IContactRepository _repo;
         private readonly IProjectRepository _projectRepo;
-        private readonly IGroupContactsRepository _groupContactsRepo;
         private readonly ILogger<ContactService> _logger;
 
         public ContactService(
             IContactRepository repo,
             IProjectRepository projectRepo,
-            IGroupContactsRepository groupContactsRepo,
             ILogger<ContactService> logger)
         {
             _repo = repo;
             _projectRepo = projectRepo;
-            _groupContactsRepo = groupContactsRepo;
             _logger = logger;
         }
 
@@ -162,14 +159,6 @@ namespace ContactSystem.Services
             if (existing is null)
                 return ApiResponse<bool>.Fail($"Contact with id {id} not found.", statusCode: StatusCodes.Status404NotFound);
 
-            // Pre-clean any GroupContacts rows that reference this contact so the
-            // DELETE on Contacts does not trip the FK_GroupContacts_Contacts_ContactId.
-            var groupMemberships = await _groupContactsRepo.GetGroupsByContactIdAsync(id);
-            foreach (var g in groupMemberships)
-            {
-                await _groupContactsRepo.RemoveAsync(g.GroupId, id);
-            }
-
             try
             {
                 var rows = await _repo.DeleteAsync(id);
@@ -181,7 +170,7 @@ namespace ContactSystem.Services
             catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 547)
             {
                 return ApiResponse<bool>.Fail(
-                    "Contact cannot be deleted because of dependent group memberships.",
+                    "Contact cannot be deleted because of dependent records.",
                     statusCode: StatusCodes.Status409Conflict);
             }
         }

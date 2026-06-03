@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { ContactsApi, GroupsApi, ProjectsApi } from "@/lib/api";
+import { GroupsApi, ProjectsApi } from "@/lib/api";
 import { useAsync } from "@/lib/hooks";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PageError } from "@/components/layout/Page";
@@ -15,18 +15,14 @@ import { Badge } from "@/components/ui/Badge";
 export default function GroupsPage() {
   const groups = useAsync(["groups"], () => GroupsApi.list());
   const projects = useAsync(["projects"], () => ProjectsApi.list());
-  const contacts = useAsync(["contacts"], () => ContactsApi.list());
 
   const projectById = useMemo(() => {
     const m = new Map<number, string>();
-    for (const p of projects.data ?? []) m.set(p.project_id, p.project_name);
+    for (const p of projects.data ?? []) {
+      m.set(p.project_id, p.project_name);
+    }
     return m;
   }, [projects.data]);
-
-  const memberCount = useMemo(() => {
-    const m = new Map<number, number>();
-    return m; // We don't have a direct "group -> contacts" list; counts come from detail.
-  }, []);
 
   if (groups.loading && !groups.data) return <FullPageSpinner />;
   if (groups.error && !groups.data) {
@@ -39,7 +35,7 @@ export default function GroupsPage() {
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader
         title="Groups"
-        description="A project can have at most one group. Use group detail to manage members."
+        description="Groups are specialities that belong to a project and can contain many contacts."
         actions={
           <Link href="/groups/new">
             <Button>+ New group</Button>
@@ -51,7 +47,7 @@ export default function GroupsPage() {
         <EmptyState
           icon="👥"
           title="No groups yet"
-          description="Create a group inside one of your projects."
+          description="Create a group under a project."
           action={
             <Link href="/groups/new">
               <Button>+ New group</Button>
@@ -66,27 +62,30 @@ export default function GroupsPage() {
             { key: "project", header: "Project" },
             { key: "actions", header: "", className: "w-32 text-right" },
           ]}
-          rows={list.map((g) => ({
-            id: g.group_id,
-            cells: [
-              <span className="font-mono text-xs text-slate-500">#{g.group_id}</span>,
-              <Link
-                href={`/groups/${g.group_id}`}
-                className="font-medium text-slate-900 hover:text-brand-600"
-              >
-                {g.group_name}
-              </Link>,
-              <div className="flex items-center gap-2">
-                <Badge tone="brand">#{g.project_id}</Badge>
-                <span className="text-sm text-slate-700">
-                  {projectById.get(g.project_id) ?? "—"}
-                </span>
-              </div>,
-              <Link href={`/groups/${g.group_id}`}>
-                <Button size="sm" variant="secondary">View</Button>
-              </Link>,
-            ],
-          }))}
+          rows={list.map((g) => {
+            const projectName = projectById.get(g.project_id);
+            return {
+              id: g.group_id,
+              cells: [
+                <span className="font-mono text-xs text-slate-500">#{g.group_id}</span>,
+                <Link
+                  href={`/groups/${g.group_id}`}
+                  className="font-medium text-slate-900 hover:text-brand-600"
+                >
+                  {g.group_name}
+                </Link>,
+                <div className="flex items-center gap-2">
+                  <Badge tone="brand">#{g.project_id}</Badge>
+                  <span className="text-sm text-slate-700">
+                    {projectName ?? "—"}
+                  </span>
+                </div>,
+                <Link href={`/groups/${g.group_id}`}>
+                  <Button size="sm" variant="secondary">View</Button>
+                </Link>,
+              ],
+            };
+          })}
         />
       )}
 

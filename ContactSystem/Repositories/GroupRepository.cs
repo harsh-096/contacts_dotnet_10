@@ -58,8 +58,8 @@ namespace ContactSystem.Repositories
             await using var conn = await _db.GetConnectionAsync();
             await using var cmd = new SqlCommand(sp, conn) { CommandType = CommandType.StoredProcedure };
 
-            cmd.Parameters.Add(new SqlParameter("@GroupName",  SqlDbType.VarChar, 255) { Value = group.GroupName });
-            cmd.Parameters.Add(new SqlParameter("@ProjectId", SqlDbType.Int)         { Value = group.ProjectId });
+            cmd.Parameters.Add(new SqlParameter("@GroupName", SqlDbType.VarChar, 255) { Value = group.GroupName });
+            cmd.Parameters.Add(new SqlParameter("@ProjectId", SqlDbType.Int)          { Value = group.ProjectId });
 
             var result = await cmd.ExecuteScalarAsync();
             var newId = result != null ? Convert.ToInt32(result) : 0;
@@ -74,17 +74,16 @@ namespace ContactSystem.Repositories
             await using var conn = await _db.GetConnectionAsync();
             await using var cmd = new SqlCommand(sp, conn) { CommandType = CommandType.StoredProcedure };
 
-            cmd.Parameters.Add(new SqlParameter("@GroupId",    SqlDbType.Int)         { Value = id });
-            cmd.Parameters.Add(new SqlParameter("@GroupName",  SqlDbType.VarChar, 255) { Value = (object?)groupName  ?? DBNull.Value });
-            cmd.Parameters.Add(new SqlParameter("@ProjectId", SqlDbType.Int)         { Value = (object?)projectId ?? DBNull.Value });
+            cmd.Parameters.Add(new SqlParameter("@GroupId",    SqlDbType.Int)          { Value = id });
+            cmd.Parameters.Add(new SqlParameter("@GroupName",  SqlDbType.VarChar, 255) { Value = (object?)groupName ?? DBNull.Value });
+            cmd.Parameters.Add(new SqlParameter("@ProjectId",  SqlDbType.Int)          { Value = (object?)projectId ?? DBNull.Value });
 
             var result = await cmd.ExecuteScalarAsync();
             var rows = result != null ? Convert.ToInt32(result) : 0;
             _logger.LogInformation(
-                "Updated group Id {Id}. Rows affected: {Rows}. " +
-                "Fields: groupName={N}, projectId={P}.",
+                "Updated group Id {Id}. Rows affected: {Rows}. Fields: groupName={N}, projectId={P}.",
                 id, rows,
-                groupName  ?? "(unchanged)",
+                groupName ?? "(unchanged)",
                 projectId?.ToString() ?? "(unchanged)");
             return rows;
         }
@@ -119,6 +118,90 @@ namespace ContactSystem.Repositories
             }
 
             _logger.LogInformation("Retrieved {Count} groups for ProjectId {ProjectId}.", list.Count, projectId);
+            return list;
+        }
+
+        public async Task<int> DeleteByProjectIdAsync(int projectId)
+        {
+            const string sp = "dbo.sp_DeleteGroupsByProjectId";
+
+            await using var conn = await _db.GetConnectionAsync();
+            await using var cmd = new SqlCommand(sp, conn) { CommandType = CommandType.StoredProcedure };
+            cmd.Parameters.Add(new SqlParameter("@ProjectId", SqlDbType.Int) { Value = projectId });
+
+            var result = await cmd.ExecuteScalarAsync();
+            var rows = result != null ? Convert.ToInt32(result) : 0;
+            _logger.LogInformation(
+                "Bulk-deleted groups for ProjectId {ProjectId}. Rows affected: {Rows}.",
+                projectId, rows);
+            return rows;
+        }
+
+        public async Task<bool> AddContactToGroupAsync(int groupId, int contactId)
+        {
+            const string sp = "dbo.sp_AddContactToGroup";
+
+            await using var conn = await _db.GetConnectionAsync();
+            await using var cmd = new SqlCommand(sp, conn) { CommandType = CommandType.StoredProcedure };
+            cmd.Parameters.Add(new SqlParameter("@GroupId",   SqlDbType.Int) { Value = groupId });
+            cmd.Parameters.Add(new SqlParameter("@ContactId", SqlDbType.Int) { Value = contactId });
+
+            var result = await cmd.ExecuteScalarAsync();
+            var rows = result != null ? Convert.ToInt32(result) : 0;
+            _logger.LogInformation("Added ContactId {C} to GroupId {G}.", contactId, groupId);
+            return rows > 0;
+        }
+
+        public async Task<bool> RemoveContactFromGroupAsync(int groupId, int contactId)
+        {
+            const string sp = "dbo.sp_RemoveContactFromGroup";
+
+            await using var conn = await _db.GetConnectionAsync();
+            await using var cmd = new SqlCommand(sp, conn) { CommandType = CommandType.StoredProcedure };
+            cmd.Parameters.Add(new SqlParameter("@GroupId",   SqlDbType.Int) { Value = groupId });
+            cmd.Parameters.Add(new SqlParameter("@ContactId", SqlDbType.Int) { Value = contactId });
+
+            var result = await cmd.ExecuteScalarAsync();
+            var rows = result != null ? Convert.ToInt32(result) : 0;
+            _logger.LogInformation("Removed ContactId {C} from GroupId {G}.", contactId, groupId);
+            return rows > 0;
+        }
+
+        public async Task<IEnumerable<Contact>> GetContactsByGroupIdAsync(int groupId)
+        {
+            const string sp = "dbo.sp_GetContactsByGroupId";
+            var list = new List<Contact>();
+
+            await using var conn = await _db.GetConnectionAsync();
+            await using var cmd = new SqlCommand(sp, conn) { CommandType = CommandType.StoredProcedure };
+            cmd.Parameters.Add(new SqlParameter("@GroupId", SqlDbType.Int) { Value = groupId });
+
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                list.Add(ContactReader.Map(reader));
+            }
+
+            _logger.LogInformation("Retrieved {Count} contacts for GroupId {GroupId}.", list.Count, groupId);
+            return list;
+        }
+
+        public async Task<IEnumerable<Group>> GetGroupsByContactIdAsync(int contactId)
+        {
+            const string sp = "dbo.sp_GetGroupsByContactId";
+            var list = new List<Group>();
+
+            await using var conn = await _db.GetConnectionAsync();
+            await using var cmd = new SqlCommand(sp, conn) { CommandType = CommandType.StoredProcedure };
+            cmd.Parameters.Add(new SqlParameter("@ContactId", SqlDbType.Int) { Value = contactId });
+
+            await using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                list.Add(Map(reader));
+            }
+
+            _logger.LogInformation("Retrieved {Count} groups for ContactId {ContactId}.", list.Count, contactId);
             return list;
         }
 

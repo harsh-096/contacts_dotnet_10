@@ -17,6 +17,8 @@ import { Alert } from "@/components/ui/Alert";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { describeError } from "@/lib/errors";
 
+type EditableField = "groupName" | "project";
+
 export default function EditGroupPage() {
   const params = useParams<{ id: string }>();
   const id = Number(params.id);
@@ -27,7 +29,6 @@ export default function EditGroupPage() {
     enabled: Number.isFinite(id) && id > 0,
   });
   const projects = useAsync(["projects"], () => ProjectsApi.list());
-  const allGroups = useAsync(["groups"], () => GroupsApi.list());
 
   const {
     register,
@@ -40,10 +41,10 @@ export default function EditGroupPage() {
     defaultValues: { group_name: "", project_id: undefined },
   });
 
-  const [editing, setEditing] = useState<{
-    name: boolean;
-    project: boolean;
-  }>({ name: false, project: false });
+  const [editing, setEditing] = useState<Record<EditableField, boolean>>({
+    groupName: false,
+    project: false,
+  });
 
   useEffect(() => {
     if (group.data) {
@@ -51,7 +52,7 @@ export default function EditGroupPage() {
         group_name: group.data.group_name,
         project_id: group.data.project_id,
       });
-      setEditing({ name: false, project: false });
+      setEditing({ groupName: false, project: false });
     }
   }, [group.data, reset]);
 
@@ -61,11 +62,11 @@ export default function EditGroupPage() {
 
   const onSubmit = handleSubmit(async (values) => {
     const payload: { group_name?: string; project_id?: number } = {};
-    if (editing.name) payload.group_name = values.group_name?.trim() ?? "";
+    if (editing.groupName) payload.group_name = values.group_name?.trim() ?? "";
     if (editing.project && values.project_id && values.project_id > 0) {
       payload.project_id = values.project_id;
     }
-    if (!editing.name && !editing.project) {
+    if (!editing.groupName && !editing.project) {
       toast.push({ tone: "error", title: "Nothing to update" });
       return;
     }
@@ -83,19 +84,24 @@ export default function EditGroupPage() {
 
   const g = group.data;
   const projectId = watch("project_id");
-  const projectTaken = (allGroups.data ?? []).some(
-    (x) => x.project_id === projectId && x.group_id !== g.group_id
-  );
   const nameValue = watch("group_name") ?? "";
   const nameDirty = nameValue.trim() !== g.group_name;
   const projectDirty = (projectId ?? 0) !== g.project_id;
-  const canSave = (editing.name && nameDirty) || (editing.project && projectDirty);
+  const canSave =
+    (editing.groupName && nameDirty) || (editing.project && projectDirty);
+
+  function toggle(field: EditableField) {
+    setEditing((s) => {
+      const next = { ...s, [field]: !s[field] };
+      return next;
+    });
+  }
 
   return (
     <div className="mx-auto max-w-xl">
       <PageHeader
-        title={`Edit “${g.group_name}”`}
-        description="Toggle each section on, change it, and save. The API only updates fields you actually change."
+        title={`Edit "${g.group_name}"`}
+        description="Toggle each section on, change it, and save."
         actions={
           <Link href={`/groups/${id}`}>
             <Button variant="secondary">← Back</Button>
@@ -117,14 +123,14 @@ export default function EditGroupPage() {
             </div>
             <Button
               size="sm"
-              variant={editing.name ? "secondary" : "primary"}
+              variant={editing.groupName ? "secondary" : "primary"}
               type="button"
-              onClick={() => setEditing((s) => ({ ...s, name: !s.name }))}
+              onClick={() => toggle("groupName")}
             >
-              {editing.name ? "Cancel" : "Edit"}
+              {editing.groupName ? "Cancel" : "Edit"}
             </Button>
           </div>
-          {editing.name && (
+          {editing.groupName && (
             <div className="mt-3">
               <Field error={errors.group_name?.message}>
                 <Input
@@ -149,7 +155,7 @@ export default function EditGroupPage() {
               size="sm"
               variant={editing.project ? "secondary" : "primary"}
               type="button"
-              onClick={() => setEditing((s) => ({ ...s, project: !s.project }))}
+              onClick={() => toggle("project")}
             >
               {editing.project ? "Cancel" : "Move"}
             </Button>
@@ -157,7 +163,7 @@ export default function EditGroupPage() {
           {editing.project && (
             <div className="mt-3">
               <Field
-                hint="The target project must not already own a different group, otherwise 409 Conflict is returned."
+                hint="The target project must already exist."
                 error={errors.project_id?.message}
               >
                 <Select
@@ -167,15 +173,10 @@ export default function EditGroupPage() {
                   <option value={0}>Select a project…</option>
                   {(projects.data ?? []).map((p) => (
                     <option key={p.project_id} value={p.project_id}>
-                      {p.project_name} (#{p.project_id})
+                      {p.project_name}
                     </option>
                   ))}
                 </Select>
-                {projectTaken && (
-                  <p className="mt-1 text-xs text-amber-700">
-                    ⚠ That project already has a different group.
-                  </p>
-                )}
               </Field>
             </div>
           )}

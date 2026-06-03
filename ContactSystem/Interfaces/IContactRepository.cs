@@ -20,5 +20,6 @@ namespace ContactSystem.Interfaces
         Task<int> DeleteAsync(int id);
         Task<bool> PhoneNumberExistsAsync(long phoneNumber, int? excludeId = null);
         Task<IEnumerable<Contact>> GetByProjectIdAsync(int projectId);
+        Task<bool> ExistsAsync(int id);
     }
 }
